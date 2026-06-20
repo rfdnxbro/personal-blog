@@ -10,6 +10,8 @@ export default defineConfig({
     baseURL: "http://localhost:3000",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
+    // Phase 1 で E2E 件数が増えてアーティファクト容量が問題化したら、
+    // "on-first-retry" への切り替え、または size 制限を検討する。
     video: "retain-on-failure",
   },
   webServer: {

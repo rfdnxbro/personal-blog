@@ -22,7 +22,7 @@ Claude Code 向けプロジェクト規約。詳細仕様は [PLAN.md](./PLAN.md
 - `src/lib/` — Supabase クライアント (`supabase/{server,client,middleware}.ts`)、Markdown サニタイズ (`markdown.ts`)、zod スキーマ (`schemas.ts`)
 - `src/components/` — UI コンポーネント
 - `src/middleware.ts` — Next root middleware (認証ガード)
-- `scripts/` — 運用スクリプト (`seed.ts` など、サーバ専用、service role key 利用可)
+- `scripts/` — 運用スクリプト (`seed.ts` などのサーバ専用ユーティリティ。`SUPABASE_SERVICE_ROLE_KEY` の利用可否は下記実装規約で経路限定)
 - `supabase/migrations/` — SQL マイグレーション (`NNNN_snake.sql`)
 - `e2e/` — Playwright E2E
 - `.claude/` — Claude Code ローカル規約 (`rules/`, `skills/`, `settings.json`)
@@ -64,7 +64,7 @@ Claude Code 向けプロジェクト規約。詳細仕様は [PLAN.md](./PLAN.md
 1. **red**: 期待する挙動の Vitest / Playwright を先に書き、`pnpm test` が失敗することを確認
 2. **green**: 失敗テストを通す最小実装
 3. **refactor**: 重複削減・命名改善。テストは緑のまま
-4. 完了前に必ず `pnpm lint && pnpm typecheck && pnpm test` を通してから PR を開く
+4. 完了前に必ず `pnpm lint && pnpm typecheck && pnpm test && pnpm build` を通してから PR を開く (ブラウザ動作を伴う変更は `pnpm test:e2e` も追加)
 
 ## PR 運用
 

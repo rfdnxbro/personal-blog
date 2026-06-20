@@ -17,7 +17,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "db:seed": "tsx scripts/seed.ts",
-    "prepare": "lefthook install || true"
+    "prepare": "command -v lefthook >/dev/null 2>&1 && lefthook install || true"
   },
   "dependencies": {
     "next": "16.2.9",

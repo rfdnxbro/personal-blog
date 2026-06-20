@@ -108,6 +108,13 @@ create policy "posts_admin_modify"
   with check (public.current_editor_role() = 'admin');
 ```
 
+`stable` を付けている意図:
+
+- 同一ステートメント内 (1 つのクエリ) で同じ引数 (ここでは `auth.uid()`) なら結果を再評価せずキャッシュしてよい、という Postgres 最適化ヒント
+- `editors` が UPDATE されたら **次のステートメント** からは新しい値が引かれる (`stable` は immutable ではないので、別クエリでは再計算される)
+- RLS planner が `current_editor_role()` を述語に含むポリシーを 1 行ずつ再評価せずプリペアできるため必須に近い
+- `volatile` にすると行ごとに再評価され RLS が遅くなる。`immutable` にすると `editors` を更新しても旧値が返り続け事故になる。`stable` が正解。
+
 ### updated_at の方針 (両用禁止)
 
 `updated_at` を持つテーブルでは **DB トリガー (`moddatetime` 相当) か アプリ層明示更新の どちらか 1 つだけ** を選ぶ。両用は禁止 (片方を忘れた瞬間に時刻がずれる)。本リポジトリでは DB トリガー方式に統一する。

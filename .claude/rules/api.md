@@ -59,10 +59,11 @@ export default route
 ## Origin / CSRF 検証
 
 - state-changing route (POST / PUT / PATCH / DELETE) は `src/server/hono/middleware/csrf.ts` (`hono/csrf` または Origin ヘッダ検証) を **必ず通す**。
-- 許可 Origin は **本番**: `NEXT_PUBLIC_SITE_URL` 起源のみ。**preview**: Vercel preview の subdomain がランダム (`https://<project>-<hash>-<team>.vercel.app`) なので、以下のいずれかを `src/server/hono/middleware/csrf.ts` で明示する:
-  - Vercel preview env で `NEXT_PUBLIC_SITE_URL` を preview URL に上書きし、env 値そのまま比較
-  - middleware 側で `process.env.VERCEL_ENV === 'preview'` のとき `https://*.vercel.app` のホスト末尾マッチを許可
-  - これを忘れると **preview デプロイで state-changing API 呼び出しが全部 403** になる
+- 許可 Origin の決定方針:
+  - **本番**: `NEXT_PUBLIC_SITE_URL` 起源のみ。
+  - **preview**: Vercel preview の subdomain がランダム (`https://<project>-<hash>-<team>.vercel.app`) なので、**第一推奨は Vercel が自動注入する `VERCEL_URL` を `https://${process.env.VERCEL_URL}` の形で許可 Origin に加える**。これでデプロイごとの正しい preview Origin だけが通る。
+  - 単純な `*.vercel.app` 末尾マッチは **採用しない**。他人のプロジェクトの preview からも CSRF が通ってしまい、ザル化する。やむを得ず wildcard を使う場合でも、必ず Vercel のプロジェクト名で前方一致を絞る (`<project>-*.vercel.app`)。
+  - preview Origin の設定を忘れると preview デプロイで state-changing API 呼び出しが全部 403 になる。
 - 例外を作る場合 (例: 外部 webhook) はルート単位で明示的に bypass コメント付きで除外する。デフォルト bypass は禁止。
 
 ## 匿名コメント API のスパム対策 (Phase 1 必須要件)
@@ -98,7 +99,7 @@ Supabase クライアントが返す `error.code` (PostgreSQL SQLSTATE) を Hono
 | `PGRST116` | PostgREST: no rows found (`maybeSingle()` で null 期待時を除く) | **404** Not Found |
 | その他 | 未分類 | **500** Internal Server Error |
 
-ヘルパは `src/server/hono/lib/db-error.ts` (Phase 1 で実装) に集約し、各 route で `if (error) return c.json(...)、mapDbError(error)` の形に揃える。
+ヘルパは `src/server/hono/lib/db-error.ts` (Phase 1 で実装) に集約し、各 route で `if (error) return c.json(mapDbError(error))` の形 (戻り値が body + status の組) に揃える。
 
 ## 運用スクリプト (`scripts/`)
 

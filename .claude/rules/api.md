@@ -42,9 +42,37 @@ export default route
 - `@supabase/ssr` の `createServerClient` を `src/lib/supabase/server.ts` 経由で利用する。route 内で `@supabase/supabase-js` の `createClient` を直接呼ばない。
 - ブラウザ側 (`src/lib/supabase/client.ts`) は `createBrowserClient` を使う。サーバ専用クライアントを `'use client'` モジュールに import しない。
 
+## 認可とサニタイズの責務 (Phase 1 アーキ判断)
+
+- **認可は Postgres RLS が唯一の真実の源**。Hono ルートで認可判定を再実装しない。Hono は zod 検証 + セッション取り出し + 複合トランザクション + エラーマッピングだけを担う薄層。
+- Hono は **必ず `createServerClient` (authenticated client) 経由** で Supabase を叩く。`SUPABASE_SERVICE_ROLE_KEY` を使う `createClient` の利用箇所は以下に限定する:
+  - `scripts/seed.ts` (初期 admin upsert)
+  - 招待時の `auth.admin.inviteUserByEmail` を呼ぶ admin 専用 route 1 箇所 (明示コメント `// service-role: invite only` を付ける)
+  - `auth.users` トリガー `handle_new_user` の内部 (Postgres 内、Node 側には漏れない)
+- サニタイズは Hono ルートでは行わない。表示時に `src/lib/markdown.ts` の `renderMarkdownToSafeHtml()` を通す方式 (詳細は [components.md](./components.md))。
+
+## サーバ専用モジュールの隔離
+
+- `src/lib/supabase/server.ts` と `src/server/hono/**` の入口ファイル (`app.ts`, `routes/*.ts`, `middleware/*.ts`) は **冒頭に `import 'server-only'` を必ず宣言**する。`server-only` パッケージを devDep に追加し、`'use client'` 配下に import された瞬間 build エラーで落ちる構成にする。
+- `scripts/*.ts` も `server-only` を import するか、Node 専用 API を冒頭で参照することで Web ターゲットへの import 経路を物理的に閉じる。
+
+## Origin / CSRF 検証
+
+- state-changing route (POST / PUT / PATCH / DELETE) は `src/server/hono/middleware/csrf.ts` (`hono/csrf` または Origin ヘッダ検証) を **必ず通す**。許可 Origin は `NEXT_PUBLIC_SITE_URL` 起源のみ。
+- 例外を作る場合 (例: 外部 webhook) はルート単位で明示的に bypass コメント付きで除外する。デフォルト bypass は禁止。
+
+## 匿名コメント API のスパム対策 (Phase 1 必須要件)
+
+`POST /api/comments` 系の匿名 / 未認証 endpoint は以下 4 点セットを **同梱要件** とする。1 つでも欠ければ実装 PR をマージしない。
+
+1. **rate limit**: 1 IP / 分 5 件、1 IP / 時 30 件 (sliding window)。`src/server/hono/middleware/rate-limit.ts` 経由。
+2. **Cloudflare Turnstile invisible**: フロントでトークン取得 → サーバ側で `siteverify` 検証。失敗は 400。
+3. **honeypot**: 隠しフィールド (`website` 等) を仕込み、値が入っていたら 200 を返して silent drop。
+4. **入力上限**: 本文 2000 char (`comments.body` の DB check 制約と zod の `.max(2000)` で二重)、URL 出現数を zod `refine` で 2 個以下に制限。
+
 ## 機密の取り扱い
 
-- `SUPABASE_SERVICE_ROLE_KEY` を参照してよいのは **`scripts/`** と **`src/server/hono/`** のみ。
+- `SUPABASE_SERVICE_ROLE_KEY` を参照してよいのは **上記「認可とサニタイズの責務」で列挙した経路のみ**。
 - `src/lib/supabase/client.ts` および `'use client'` 配下のいかなるモジュールからも参照禁止。クライアントバンドルへの混入は重大インシデント扱い。
 - `.env.local` / Vercel env / GitHub Actions secrets 以外の場所に書かない。コード上で直接文字列リテラルを書かない。
 

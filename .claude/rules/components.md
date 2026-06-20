@@ -32,9 +32,35 @@ React コンポーネント (Server / Client) に適用される規約。Next.js
 
 ## Markdown のサニタイズ
 
-- ユーザー投稿 / 外部入力の Markdown を HTML として描画する場合、必ず `src/lib/markdown.ts` の unified pipeline (`remark-parse` → `remark-gfm` → `remark-rehype` → `rehype-sanitize` → `rehype-stringify`) を通す。
-- `dangerouslySetInnerHTML` で生 HTML を直接埋め込まない。サニタイズを経由した結果のみ許可。
+- ユーザー投稿 / 外部入力の Markdown を HTML として描画する場合、必ず `src/lib/markdown.ts` の `renderMarkdownToSafeHtml(md: string): string` ヘルパを通す。pipeline は `remark-parse` → `remark-gfm` → `remark-rehype` (`allowDangerousHtml: false`) → `rehype-pretty-code` → `rehype-sanitize` → `rehype-stringify`。
+- 投稿は **保存時にサニタイズしない**。`posts.content_md` に生 Markdown のまま保存し、表示時の単一入口で必ずサニタイズする (責務の二重化を避ける)。
+- `dangerouslySetInnerHTML` で生 HTML を直接埋め込まない。`renderMarkdownToSafeHtml` の戻り値のみを `dangerouslySetInnerHTML` に渡すことを許可する。
 - raw HTML を Markdown 内に通したいケースが出ても、`rehype-sanitize` の allowlist を緩めない。要件が出たら別 PR で議論。
+
+### sanitize schema の固定
+
+- schema は `rehype-sanitize` の `defaultSchema` を基点に、以下を **必ず固定** する:
+  - `attributes.a.href` の protocol allowlist を `http` / `https` / `mailto` のみに絞る
+  - `attributes.img.src` の protocol allowlist も同様
+  - `data:` / `javascript:` / `file:` 系の URI はすべて排除
+  - `rehype-pretty-code` が付与する `data-*` 属性と `className` (`code-line`, `highlighted` など) のみを明示的に追加 allow する
+- 上記 schema 定義は `src/lib/markdown.ts` に集約し、他モジュールから上書きできないように export しない (もしくは `Object.freeze` する)。
+
+### コメントは plain text 描画
+
+- コメント本文 (`comments.body`) は **plain text + 改行のみ**。Markdown レンダリングしない (XSS 表面積最小化)。
+- 表示時は React の自動エスケープのみで十分。`<br />` 化したい場合は文字列を改行で split して `<p>` を並べる方式に留め、`dangerouslySetInnerHTML` は使わない。
+
+### XSS ゴールデンテスト
+
+- `src/lib/markdown.ts` の実装 PR には以下の入力を含む Vitest ゴールデンテスト (`src/lib/markdown.test.ts`) を **必ず同梱** する:
+  - `<script>alert(1)</script>`
+  - `[click](javascript:alert(1))` / `[click](data:text/html,<script>alert(1)</script>)`
+  - `<img src=x onerror=alert(1)>`
+  - `<svg onload=alert(1)></svg>`
+  - `<iframe src="javascript:alert(1)"></iframe>`
+  - `<a href="http://example.com" target="_blank">` (rel に noopener noreferrer が付くこと)
+- 出力に `<script>` / `javascript:` / `onerror=` / `onload=` などが残らないことを `expect(html).not.toMatch(/.../)` で全件チェックする。
 
 ## 機密の取り扱い
 

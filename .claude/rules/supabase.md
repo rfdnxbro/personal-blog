@@ -51,6 +51,67 @@ paths:
 
 - `security definer` を付けたら必ず `revoke all on function ... from public` と `grant execute on function ... to <role>` で実行権限を絞る。
 
+### grant 先の使い分け (重要)
+
+トリガーをぶら下げる先によって grant 先が違う。テンプレ通りに `authenticated` に grant すると `auth.users` トリガーは permission denied で落ちる。
+
+| トリガー先 | grant 先 | 用途 |
+|---|---|---|
+| `auth.users` | `supabase_auth_admin` | サインアップ時の許可リスト判定、editors 紐付けなど |
+| `public.<app_table>` | `authenticated` (場合により `anon`) | アプリ側テーブルの updated_at 自動更新など |
+
+```sql
+-- auth.users トリガー用 (例: handle_new_user)
+revoke all on function public.handle_new_user() from public;
+grant execute on function public.handle_new_user() to supabase_auth_admin;
+
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row
+  execute function public.handle_new_user();
+```
+
+```sql
+-- application table トリガー用 (例: posts.updated_at の moddatetime)
+revoke all on function public.touch_updated_at() from public;
+grant execute on function public.touch_updated_at() to authenticated;
+
+create trigger posts_set_updated_at
+  before update on public.posts
+  for each row
+  execute function public.touch_updated_at();
+```
+
+### RLS から editors の role を引く時のパターン
+
+`editors` の `role` を別テーブルの RLS ポリシーから参照するときに、`editors` を `using (true)` で開放すると全メール/ロールが他 `authenticated` に漏れる。`SECURITY DEFINER` 関数を経由して RLS を bypass しつつ、関数の戻り値だけを露出させる方式に統一する。
+
+```sql
+create or replace function public.current_editor_role()
+returns text
+language sql
+security definer
+set search_path = public, pg_temp
+stable
+as $$
+  select role from public.editors where user_id = auth.uid()
+$$;
+
+revoke all on function public.current_editor_role() from public;
+grant execute on function public.current_editor_role() to authenticated;
+
+-- 利用例: posts の policy
+create policy "posts_admin_modify"
+  on public.posts
+  for all
+  using (public.current_editor_role() = 'admin')
+  with check (public.current_editor_role() = 'admin');
+```
+
+### updated_at の方針 (両用禁止)
+
+`updated_at` を持つテーブルでは **DB トリガー (`moddatetime` 相当) か アプリ層明示更新の どちらか 1 つだけ** を選ぶ。両用は禁止 (片方を忘れた瞬間に時刻がずれる)。本リポジトリでは DB トリガー方式に統一する。
+
 ## マイグレーションの粒度
 
 - 1 マイグレーション = 1 関心事 (1 テーブル追加 + 関連する policy / index / trigger まで)。複数機能を 1 ファイルに混ぜない。

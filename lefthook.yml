@@ -6,7 +6,7 @@ pre-commit:
       run: pnpm exec biome check --write {staged_files} && git add {staged_files}
       stage_fixed: true
     typecheck:
-      glob: "*.{ts,tsx}"
+      glob: "{*.{ts,tsx},tsconfig*.json,package.json,pnpm-lock.yaml}"
       run: pnpm exec tsc -p . --noEmit
     vitest:
       glob: "*.{ts,tsx}"

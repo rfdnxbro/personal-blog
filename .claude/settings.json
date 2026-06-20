@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "FILE=$(jq -r '.tool_input.file_path // empty'); case \"$FILE\" in *.ts|*.tsx|*.json|*.jsonc|*.css|*.md) [ -n \"$FILE\" ] && pnpm exec biome check --write \"$FILE\";; esac"
+            "command": "FILE=$(jq -r '.tool_input.file_path // empty'); case \"$FILE\" in *.ts|*.tsx|*.json|*.jsonc|*.css|*.md) [ -n \"$FILE\" ] && pnpm exec biome check --write --no-errors-on-unmatched \"$FILE\";; esac"
           }
         ]
       }

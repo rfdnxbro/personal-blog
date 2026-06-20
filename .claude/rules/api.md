@@ -58,7 +58,11 @@ export default route
 
 ## Origin / CSRF 検証
 
-- state-changing route (POST / PUT / PATCH / DELETE) は `src/server/hono/middleware/csrf.ts` (`hono/csrf` または Origin ヘッダ検証) を **必ず通す**。許可 Origin は `NEXT_PUBLIC_SITE_URL` 起源のみ。
+- state-changing route (POST / PUT / PATCH / DELETE) は `src/server/hono/middleware/csrf.ts` (`hono/csrf` または Origin ヘッダ検証) を **必ず通す**。
+- 許可 Origin は **本番**: `NEXT_PUBLIC_SITE_URL` 起源のみ。**preview**: Vercel preview の subdomain がランダム (`https://<project>-<hash>-<team>.vercel.app`) なので、以下のいずれかを `src/server/hono/middleware/csrf.ts` で明示する:
+  - Vercel preview env で `NEXT_PUBLIC_SITE_URL` を preview URL に上書きし、env 値そのまま比較
+  - middleware 側で `process.env.VERCEL_ENV === 'preview'` のとき `https://*.vercel.app` のホスト末尾マッチを許可
+  - これを忘れると **preview デプロイで state-changing API 呼び出しが全部 403** になる
 - 例外を作る場合 (例: 外部 webhook) はルート単位で明示的に bypass コメント付きで除外する。デフォルト bypass は禁止。
 
 ## 匿名コメント API のスパム対策 (Phase 1 必須要件)
@@ -80,6 +84,21 @@ export default route
 
 - Hono の `c.json({ error: '...' }, status)` で構造化レスポンスを返す。`throw new Error()` を握りつぶさない。
 - バリデーションエラーは `@hono/zod-validator` が 400 + zod issue を自動で返すのに任せる。手で再実装しない。
+
+### Supabase / Postgres エラー → HTTP ステータス変換
+
+Supabase クライアントが返す `error.code` (PostgreSQL SQLSTATE) を Hono レイヤで HTTP に変換する。雑に 500 で返すと RLS 弾きやユニーク違反まで「サーバエラー」として扱われ、運用上のシグナルが潰れる。
+
+| SQLSTATE | 意味 | HTTP |
+|---|---|---|
+| `42501` | insufficient_privilege (RLS 弾き / GRANT 不足) | **403** Forbidden |
+| `23505` | unique_violation (slug 重複など) | **409** Conflict |
+| `23503` | foreign_key_violation (`on delete restrict` で参照中の親を消そうとした等) | **409** Conflict |
+| `23514` | check_violation (DB check 制約違反、zod で先に弾く想定) | **400** Bad Request |
+| `PGRST116` | PostgREST: no rows found (`maybeSingle()` で null 期待時を除く) | **404** Not Found |
+| その他 | 未分類 | **500** Internal Server Error |
+
+ヘルパは `src/server/hono/lib/db-error.ts` (Phase 1 で実装) に集約し、各 route で `if (error) return c.json(...)、mapDbError(error)` の形に揃える。
 
 ## 運用スクリプト (`scripts/`)
 

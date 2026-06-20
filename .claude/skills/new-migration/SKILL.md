@@ -136,7 +136,9 @@ begin
     limit 1;
 
   if v_editor_id is null then
-    raise exception 'email % is not in the editors allowlist', new.email
+    -- メッセージに email を含めると Supabase Auth ログ + クライアントエラーに値が残り、
+    -- 「allowlist にあるかどうかを試行で確認できる」列挙の情報源になりえるため汎用化する。
+    raise exception 'unauthorized email for signup'
       using errcode = 'P0001';
   end if;
 

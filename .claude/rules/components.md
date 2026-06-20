@@ -62,6 +62,14 @@ React コンポーネント (Server / Client) に適用される規約。Next.js
   - `<a href="http://example.com" target="_blank">` (rel に noopener noreferrer が付くこと)
 - 出力に `<script>` / `javascript:` / `onerror=` / `onload=` などが残らないことを `expect(html).not.toMatch(/.../)` で全件チェックする。
 
+### コードハイライト属性保持テスト
+
+XSS テストとは別に、`rehype-pretty-code` (shiki) がコードブロックに付与する装飾用属性 / className が sanitize 後も残ることを確認するテストを **同 PR に同梱** する。これを忘れると HTML 出力は正常でもシンタックスハイライトの CSS が当たらず、無音で見た目が壊れる:
+
+- 入力: `` ```ts\nconst x = 1\n``` ``
+- 出力に `data-language="ts"` / `data-line` / `data-highlighted-line` / 関連 className (`code-line` 等) が残ること
+- `<pre>` / `<code>` の属性 allowlist に `rehype-pretty-code` の出す属性をすべて含めた上で、Vitest で `expect(html).toMatch(/data-language="ts"/)` のような正の expectations を書く
+
 ## 機密の取り扱い
 
 - API キー / service role key などをクライアントコンポーネントから参照しない。

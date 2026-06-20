@@ -3,7 +3,7 @@ pre-commit:
   commands:
     biome:
       glob: "*.{ts,tsx,js,jsx,json,jsonc,css,md}"
-      run: pnpm exec biome check --write {staged_files} && git add {staged_files}
+      run: pnpm exec biome check --write --no-errors-on-unmatched {staged_files} && git add {staged_files}
       stage_fixed: true
     typecheck:
       glob: "{*.{ts,tsx},tsconfig*.json,package.json,pnpm-lock.yaml}"

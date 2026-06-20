@@ -42,9 +42,42 @@ export default route
 - `@supabase/ssr` の `createServerClient` を `src/lib/supabase/server.ts` 経由で利用する。route 内で `@supabase/supabase-js` の `createClient` を直接呼ばない。
 - ブラウザ側 (`src/lib/supabase/client.ts`) は `createBrowserClient` を使う。サーバ専用クライアントを `'use client'` モジュールに import しない。
 
+## 認可とサニタイズの責務 (Phase 1 アーキ判断)
+
+- **認可は Postgres RLS が唯一の真実の源**。Hono ルートで認可判定を再実装しない。Hono は zod 検証 + セッション取り出し + 複合トランザクション + エラーマッピングだけを担う薄層。
+- Hono は **必ず `createServerClient` (authenticated client) 経由** で Supabase を叩く。`SUPABASE_SERVICE_ROLE_KEY` を使う `createClient` の利用箇所は以下に限定する:
+  - `scripts/seed.ts` (初期 admin upsert)
+  - 招待時の `auth.admin.inviteUserByEmail` を呼ぶ admin 専用 route 1 箇所 (明示コメント `// service-role: invite only` を付ける)
+  - `auth.users` トリガー `handle_new_user` の内部 (Postgres 内、Node 側には漏れない)
+- サニタイズは Hono ルートでは行わない。表示時に `src/lib/markdown.ts` の `renderMarkdownToSafeHtml()` を通す方式 (詳細は [components.md](./components.md))。
+
+## サーバ専用モジュールの隔離
+
+- `src/lib/supabase/server.ts` と `src/server/hono/**` の入口ファイル (`app.ts`, `routes/*.ts`, `middleware/*.ts`) は **冒頭に `import 'server-only'` を必ず宣言**する。`server-only` パッケージを devDep に追加し、`'use client'` 配下に import された瞬間 build エラーで落ちる構成にする。
+- `scripts/*.ts` も `server-only` を import するか、Node 専用 API を冒頭で参照することで Web ターゲットへの import 経路を物理的に閉じる。
+
+## Origin / CSRF 検証
+
+- state-changing route (POST / PUT / PATCH / DELETE) は `src/server/hono/middleware/csrf.ts` (`hono/csrf` または Origin ヘッダ検証) を **必ず通す**。
+- 許可 Origin の決定方針:
+  - **本番**: `NEXT_PUBLIC_SITE_URL` 起源のみ。
+  - **preview**: Vercel preview の subdomain がランダム (`https://<project>-<hash>-<team>.vercel.app`) なので、**第一推奨は Vercel が自動注入する `VERCEL_URL` を `https://${process.env.VERCEL_URL}` の形で許可 Origin に加える**。これでデプロイごとの正しい preview Origin だけが通る。
+  - 単純な `*.vercel.app` 末尾マッチは **採用しない**。他人のプロジェクトの preview からも CSRF が通ってしまい、ザル化する。やむを得ず wildcard を使う場合でも、必ず Vercel のプロジェクト名で前方一致を絞る (`<project>-*.vercel.app`)。
+  - preview Origin の設定を忘れると preview デプロイで state-changing API 呼び出しが全部 403 になる。
+- 例外を作る場合 (例: 外部 webhook) はルート単位で明示的に bypass コメント付きで除外する。デフォルト bypass は禁止。
+
+## 匿名コメント API のスパム対策 (Phase 1 必須要件)
+
+`POST /api/comments` 系の匿名 / 未認証 endpoint は以下 4 点セットを **同梱要件** とする。1 つでも欠ければ実装 PR をマージしない。
+
+1. **rate limit**: 1 IP / 分 5 件、1 IP / 時 30 件 (sliding window)。`src/server/hono/middleware/rate-limit.ts` 経由。
+2. **Cloudflare Turnstile invisible**: フロントでトークン取得 → サーバ側で `siteverify` 検証。失敗は 400。
+3. **honeypot**: 隠しフィールド (`website` 等) を仕込み、値が入っていたら 200 を返して silent drop。
+4. **入力上限**: 本文 2000 char (`comments.body` の DB check 制約と zod の `.max(2000)` で二重)、URL 出現数を zod `refine` で 2 個以下に制限。
+
 ## 機密の取り扱い
 
-- `SUPABASE_SERVICE_ROLE_KEY` を参照してよいのは **`scripts/`** と **`src/server/hono/`** のみ。
+- `SUPABASE_SERVICE_ROLE_KEY` を参照してよいのは **上記「認可とサニタイズの責務」で列挙した経路のみ**。
 - `src/lib/supabase/client.ts` および `'use client'` 配下のいかなるモジュールからも参照禁止。クライアントバンドルへの混入は重大インシデント扱い。
 - `.env.local` / Vercel env / GitHub Actions secrets 以外の場所に書かない。コード上で直接文字列リテラルを書かない。
 
@@ -52,6 +85,21 @@ export default route
 
 - Hono の `c.json({ error: '...' }, status)` で構造化レスポンスを返す。`throw new Error()` を握りつぶさない。
 - バリデーションエラーは `@hono/zod-validator` が 400 + zod issue を自動で返すのに任せる。手で再実装しない。
+
+### Supabase / Postgres エラー → HTTP ステータス変換
+
+Supabase クライアントが返す `error.code` (PostgreSQL SQLSTATE) を Hono レイヤで HTTP に変換する。雑に 500 で返すと RLS 弾きやユニーク違反まで「サーバエラー」として扱われ、運用上のシグナルが潰れる。
+
+| SQLSTATE | 意味 | HTTP |
+|---|---|---|
+| `42501` | insufficient_privilege (RLS 弾き / GRANT 不足) | **403** Forbidden |
+| `23505` | unique_violation (slug 重複など) | **409** Conflict |
+| `23503` | foreign_key_violation (`on delete restrict` で参照中の親を消そうとした等) | **409** Conflict |
+| `23514` | check_violation (DB check 制約違反、zod で先に弾く想定) | **400** Bad Request |
+| `PGRST116` | PostgREST: no rows found (`maybeSingle()` で null 期待時を除く) | **404** Not Found |
+| その他 | 未分類 | **500** Internal Server Error |
+
+ヘルパは `src/server/hono/lib/db-error.ts` (Phase 1 で実装) に集約し、各 route で `if (error) return c.json(mapDbError(error))` の形 (戻り値が body + status の組) に揃える。
 
 ## 運用スクリプト (`scripts/`)
 

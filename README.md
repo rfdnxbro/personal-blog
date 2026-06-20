@@ -4,8 +4,6 @@ ryu さん個人のブログサービス。
 
 詳細仕様は [PLAN.md](./PLAN.md)、開発規約は [CLAUDE.md](./CLAUDE.md) を参照。
 
-> 本 README に記載の `pnpm` コマンドおよびディレクトリは scaffold 完了 (PR #1 merge) 後に有効になる。
-
 ## スタック
 
 - Next.js 16 (App Router) / React 19 / TypeScript 6

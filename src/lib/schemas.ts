@@ -2,13 +2,15 @@ import { z } from "zod";
 
 const URL_PATTERN = /https?:\/\/\S+/g;
 
+// 先頭と末尾は英数字、内部のみハイフン可。末尾ハイフン slug (`my-post-`) を弾く。
+// DB の posts.slug check 制約 (0002_posts.sql) と完全一致させる。
 const slug = z
   .string()
   .min(1)
   .max(100)
   .regex(
-    /^[a-z0-9][a-z0-9-]*$/,
-    "slug must be lowercase alphanumerics + hyphen",
+    /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/,
+    "slug must start and end with [a-z0-9] and contain only [a-z0-9-]",
   );
 
 export const postStatus = z.enum(["draft", "published"]);

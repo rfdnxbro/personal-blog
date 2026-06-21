@@ -6,8 +6,10 @@ create table public.posts (
   id uuid primary key default gen_random_uuid(),
   author_id uuid not null references public.editors(id) on delete restrict,
   title text not null check (char_length(title) between 1 and 200),
+  -- slug は先頭と末尾が英数字、内部のみハイフン可 (末尾ハイフン slug を弾く)。
+  -- zod schema (src/lib/schemas.ts) と完全一致させる。
   slug text not null unique check (
-    slug ~ '^[a-z0-9][a-z0-9-]*$' and char_length(slug) <= 100
+    slug ~ '^[a-z0-9]([a-z0-9-]*[a-z0-9])?$' and char_length(slug) <= 100
   ),
   content_md text not null,
   status text not null default 'draft' check (status in ('draft', 'published')),

@@ -1,10 +1,14 @@
 -- 0005_rate_limits.sql
 -- 匿名コメント API の rate limit (sliding window 近似)。Hono middleware (`middleware/rate-limit.ts`)
--- が authenticated client 経由で SELECT + RPC increment_rate_limit() を叩く。
+-- が SELECT (件数集計) + RPC `increment_rate_limit()` (atomic な count UPDATE) を叩く。
 --
--- 設計判断: bucket には IP のプレフィックスが入るが、匿名コメント API 専用のスロットリングに
--- 用途を絞り、書き込みは RPC 1 本に集約する。匿名 INSERT/SELECT は RLS で許可する代わりに、
--- 関数経由のロジックで件数集計を行うため攻撃面は限定的。
+-- 設計判断:
+--   - 書き込み (INSERT / UPDATE) は SECURITY DEFINER の `increment_rate_limit` 経由のみに絞り、
+--     呼び出し元 (anon / authenticated) には直接の INSERT / UPDATE 権限を渡さない。
+--     これにより `POST /rest/v1/rate_limits` で任意 bucket の count を 0 にリセットする
+--     攻撃経路を塞ぐ (PR #13 review issue #3)。
+--   - SELECT は middleware の件数集計に必要なので anon / authenticated に開放する。
+--     bucket は IP プレフィックスを含む opaque な文字列で個人特定情報は持たせない。
 
 create table public.rate_limits (
   bucket text not null,
@@ -18,31 +22,23 @@ create index rate_limits_window_start_idx
 
 alter table public.rate_limits enable row level security;
 
--- 公開コメント API は未ログインから叩かれるため anon / authenticated の SELECT/INSERT を許可。
--- bucket は IP 由来の opaque な文字列で、個人特定情報は含まれない。
+-- SELECT のみ public 許可 (件数集計用)。書き込みは RLS policy を作らず、RPC 経由でのみ通す。
 create policy "rate_limits_select_all"
   on public.rate_limits
   for select
   using (true);
 
-create policy "rate_limits_insert_all"
-  on public.rate_limits
-  for insert
-  with check (true);
-
-create policy "rate_limits_update_all"
-  on public.rate_limits
-  for update
-  using (true)
-  with check (true);
-
 -- atomic increment 用 RPC。同一 (bucket, window_start) があれば count += 1、無ければ 1 で挿入。
+-- SECURITY DEFINER: 関数所有者 (postgres) の権限で実行されるため、呼び出し元 (anon / authenticated)
+-- がテーブル直接の INSERT / UPDATE 権限を持たなくても関数経由なら書き込める。これにより
+-- count リセット攻撃を関数ロジックで防ぐ。
 create or replace function public.increment_rate_limit(
   p_bucket text,
   p_window_start timestamptz
 )
 returns void
 language sql
+security definer
 set search_path = public, pg_temp
 as $$
   insert into public.rate_limits (bucket, window_start, count)
@@ -55,9 +51,11 @@ revoke all on function public.increment_rate_limit(text, timestamptz) from publi
 grant execute on function public.increment_rate_limit(text, timestamptz) to anon, authenticated;
 
 -- 古いウィンドウのクリーンアップ用 (cron / 定期実行で叩く想定、Phase 1 では手動)。
+-- こちらも SECURITY DEFINER でテーブル DELETE 権限を呼び出し元に渡さずに済ませる。
 create or replace function public.cleanup_rate_limits()
 returns void
 language sql
+security definer
 set search_path = public, pg_temp
 as $$
   delete from public.rate_limits
@@ -68,6 +66,5 @@ revoke all on function public.cleanup_rate_limits() from public;
 grant execute on function public.cleanup_rate_limits() to authenticated;
 
 -- PostgREST から見えるよう明示 grant (Supabase の Automatically expose new tables を OFF 運用するため)。
--- 匿名コメント API は未ログイン (anon) からも叩かれ、increment_rate_limit RPC は SECURITY INVOKER で
--- 呼び出し元権限を要求するため SELECT/INSERT/UPDATE を anon にも渡す必要がある。DELETE は cleanup 関数経由のみ。
-grant select, insert, update on public.rate_limits to anon, authenticated;
+-- SELECT のみ。INSERT / UPDATE / DELETE は SECURITY DEFINER 関数経由でのみ。
+grant select on public.rate_limits to anon, authenticated;

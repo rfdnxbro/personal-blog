@@ -23,11 +23,24 @@ export const sessionMiddleware = createMiddleware<{ Variables: SessionVars }>(
     c.set("user", user ? { id: user.id, email: user.email ?? null } : null);
 
     if (user) {
-      const { data: editor } = await supabase
+      const { data: editor, error: editorErr } = await supabase
         .from("editors")
         .select("id, role")
         .eq("user_id", user.id)
         .maybeSingle();
+      if (editorErr) {
+        // DB 障害 / RLS 弾きなどでクエリが失敗したら editor は null として通すが、
+        // 監視のため必ず構造化ログに残す (Vercel Runtime Logs / Supabase Logs で拾う想定)。
+        console.error(
+          JSON.stringify({
+            level: "error",
+            msg: "editor_fetch_failed",
+            user_id: user.id,
+            code: editorErr.code,
+            err: editorErr.message,
+          }),
+        );
+      }
       c.set(
         "editor",
         editor

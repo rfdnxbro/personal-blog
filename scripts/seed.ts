@@ -3,8 +3,7 @@ import "dotenv/config";
 
 import { createClient } from "@supabase/supabase-js";
 
-// secret-key: seed only — process.env / process.exit が Node 専用 API として
-// Web ターゲットへの import を物理的に閉じるため `server-only` は付けない (tsx 直接実行で throw する)
+// secret-key: seed only — server-only は付けない (tsx 直接実行で throw する); Node API で import 経路を閉じる
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;

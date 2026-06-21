@@ -38,8 +38,10 @@ export const createCommentBody = z
     author_name: z.string().min(1).max(50),
     body: z.string().min(1).max(2000),
     turnstileToken: z.string().min(1),
-    // honeypot: 値が入っていたら silent drop。空文字列か未送信のみ通す
-    website: z.string().max(0).optional().default(""),
+    // honeypot: 任意の文字列を受け付け、route 側で「値が入っていたら silent drop」する。
+    // ここで `.max(0)` を強制すると 400 になり、bot 側に honeypot の存在がバレてしまう
+    // (silent drop の意義は「bot にエラーを返さず無視する」ことなので 200 で握り潰す)。
+    website: z.string().max(2048).optional().default(""),
   })
   .refine(
     (input) => {

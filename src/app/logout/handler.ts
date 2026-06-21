@@ -26,14 +26,24 @@ export async function handleLogout(
   return NextResponse.redirect(redirectUrl, { status: 303 });
 }
 
+/**
+ * /logout で許可する Origin の集合を組み立てる。
+ *
+ * - 本番: NEXT_PUBLIC_SITE_URL のみ
+ * - Vercel preview: NEXT_PUBLIC_SITE_URL に加え `https://${VERCEL_URL}` (デプロイごとに変わる preview origin)
+ * - dev: NEXT_PUBLIC_SITE_URL + http://localhost:3000 (env 未設定でも開発できるよう localhost は許可)
+ */
 export function buildAllowedOrigins(): string[] {
-  const origins: string[] = [];
+  const origins = new Set<string>();
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
-  if (siteUrl) origins.push(siteUrl);
+  if (siteUrl) origins.add(siteUrl);
+
   const vercelUrl = process.env.VERCEL_URL;
-  if (vercelUrl) origins.push(`https://${vercelUrl}`);
+  if (vercelUrl) origins.add(`https://${vercelUrl}`);
+
   if (process.env.NODE_ENV !== "production") {
-    origins.push("http://localhost:3000");
+    origins.add("http://localhost:3000");
   }
-  return origins;
+
+  return Array.from(origins);
 }

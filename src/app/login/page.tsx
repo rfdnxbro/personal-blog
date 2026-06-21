@@ -14,9 +14,16 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
     const supabase = await createServerClient();
     const requestHeaders = await headers();
+    // 優先度: 本番設定 (NEXT_PUBLIC_SITE_URL) > Vercel preview 自動注入 (VERCEL_URL)
+    // > リクエスト Origin (dev のフォールバック)。
+    // OAuth provider 側の callback 許可リストに乗っているのは本番ドメインだけなので、
+    // env を最優先しないと preview から本番 callback に戻されて壊れる。
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+    const vercelUrl = process.env.VERCEL_URL;
     const origin =
+      siteUrl ??
+      (vercelUrl ? `https://${vercelUrl}` : null) ??
       requestHeaders.get("origin") ??
-      process.env.NEXT_PUBLIC_SITE_URL ??
       "http://localhost:3000";
 
     const { data, error: oauthError } = await supabase.auth.signInWithOAuth({

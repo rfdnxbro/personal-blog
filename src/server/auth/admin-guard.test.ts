@@ -21,7 +21,9 @@ describe("adminGuard", () => {
 
     // Assert
     expect(result.status).toBe(307);
-    expect(result.headers.get("location")).toBe(`${baseUrl}/login`);
+    expect(result.headers.get("location")).toBe(
+      `${baseUrl}/login?next=${encodeURIComponent("/admin/dashboard")}`,
+    );
     expect(fetchEditor).not.toHaveBeenCalled();
   });
 
@@ -41,17 +43,17 @@ describe("adminGuard", () => {
 
     // Assert
     expect(result.status).toBe(307);
-    expect(result.headers.get("location")).toBe(`${baseUrl}/login`);
+    expect(result.headers.get("location")).toBe(
+      `${baseUrl}/login?next=${encodeURIComponent("/admin/posts")}`,
+    );
     expect(fetchEditor).toHaveBeenCalledWith("user-1");
   });
 
-  it("passes through when editor row exists for /admin path", async () => {
+  it("passes through when editor row exists for /admin path (role is not consulted here)", async () => {
     // Arrange
     const request = new NextRequest(`${baseUrl}/admin/posts`);
     const response = NextResponse.next();
-    const fetchEditor = vi
-      .fn()
-      .mockResolvedValue({ id: "editor-1", role: "editor" as const });
+    const fetchEditor = vi.fn().mockResolvedValue({ id: "editor-1" });
 
     // Act
     const result = await adminGuard({
@@ -85,22 +87,43 @@ describe("adminGuard", () => {
     expect(fetchEditor).not.toHaveBeenCalled();
   });
 
-  it("guards /api/admin path the same way as /admin", async () => {
+  it("does NOT guard /api/admin paths (Hono route + RLS handle that)", async () => {
     // Arrange
     const request = new NextRequest(`${baseUrl}/api/admin/posts`);
     const response = NextResponse.next();
-    const fetchEditor = vi.fn().mockResolvedValue(null);
+    const fetchEditor = vi.fn();
 
     // Act
     const result = await adminGuard({
       request,
       response,
-      user: { id: "user-1", email: "x@example.com" },
+      user: null,
+      fetchEditor,
+    });
+
+    // Assert
+    expect(result).toBe(response);
+    expect(fetchEditor).not.toHaveBeenCalled();
+  });
+
+  it("preserves search params in next= when redirecting to login", async () => {
+    // Arrange
+    const request = new NextRequest(`${baseUrl}/admin/posts?tab=draft`);
+    const response = NextResponse.next();
+    const fetchEditor = vi.fn();
+
+    // Act
+    const result = await adminGuard({
+      request,
+      response,
+      user: null,
       fetchEditor,
     });
 
     // Assert
     expect(result.status).toBe(307);
-    expect(result.headers.get("location")).toBe(`${baseUrl}/login`);
+    expect(result.headers.get("location")).toBe(
+      `${baseUrl}/login?next=${encodeURIComponent("/admin/posts?tab=draft")}`,
+    );
   });
 });

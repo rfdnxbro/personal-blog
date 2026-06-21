@@ -1,6 +1,8 @@
-import { createServerClient as createSupabaseServerClient } from "@supabase/ssr";
 import type { NextRequest } from "next/server";
-import { updateSession } from "@/lib/supabase/middleware";
+import {
+  createMiddlewareReadClient,
+  updateSession,
+} from "@/lib/supabase/middleware";
 import { adminGuard, type GuardEditor } from "@/server/auth/admin-guard";
 
 export async function middleware(request: NextRequest) {
@@ -11,31 +13,17 @@ export async function middleware(request: NextRequest) {
     response,
     user: user ? { id: user.id, email: user.email ?? null } : null,
     fetchEditor: async (userId): Promise<GuardEditor | null> => {
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const supabasePublishableKey =
-        process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-      if (!supabaseUrl || !supabasePublishableKey) {
+      const supabase = createMiddlewareReadClient(request);
+      if (!supabase) {
+        console.error(
+          "[middleware] NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY is not set; treating user as non-editor",
+        );
         return null;
       }
 
-      const supabase = createSupabaseServerClient(
-        supabaseUrl,
-        supabasePublishableKey,
-        {
-          cookies: {
-            getAll() {
-              return request.cookies.getAll();
-            },
-            setAll() {
-              // updateSession で同期済みのため middleware 側からは書き込まない
-            },
-          },
-        },
-      );
-
       const { data, error } = await supabase
         .from("editors")
-        .select("id, role")
+        .select("id")
         .eq("user_id", userId)
         .maybeSingle();
 
@@ -43,11 +31,13 @@ export async function middleware(request: NextRequest) {
         return null;
       }
 
-      return { id: data.id as string, role: data.role as "admin" | "editor" };
+      return { id: data.id as string };
     },
   });
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/api/admin/:path*"],
+  // /api/admin/** は middleware で redirect せず、各 Hono route が
+  // session + RLS (42501 → 403 マップ) で個別に守る (PR-B 以降)。
+  matcher: ["/admin/:path*"],
 };

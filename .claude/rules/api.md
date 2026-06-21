@@ -54,7 +54,7 @@ export default route
 ## サーバ専用モジュールの隔離
 
 - `src/lib/supabase/server.ts` と `src/server/hono/**` の入口ファイル (`app.ts`, `routes/*.ts`, `middleware/*.ts`) は **冒頭に `import 'server-only'` を必ず宣言**する。`server-only` パッケージを devDep に追加し、`'use client'` 配下に import された瞬間 build エラーで落ちる構成にする。
-- `scripts/*.ts` も `server-only` を import するか、Node 専用 API を冒頭で参照することで Web ターゲットへの import 経路を物理的に閉じる。
+- `scripts/*.ts` は **`server-only` を import しない**。`tsx` で直接実行される Node スクリプトでは `react-server` export condition が立たず、`server-only/index.js` が無条件に throw して実行自体が落ちる。代わりに冒頭で `process.env` / `process.exit` 等の Node 専用 API を参照することで Web ターゲットへの import 経路を物理的に閉じる方針に統一する。
 
 ## Origin / CSRF 検証
 

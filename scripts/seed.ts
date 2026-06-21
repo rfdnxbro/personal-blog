@@ -1,9 +1,13 @@
-import "server-only";
-
 import { createClient } from "@supabase/supabase-js";
 
 // secret-key: seed only — 初期 admin upsert 1 経路のみで Supabase の secret key を握る
 // (rules/api.md 「機密の取り扱い」要件)。
+//
+// `import 'server-only'` は付けない: tsx で直接実行する Node スクリプトでは
+// `react-server` condition が立たず常に throw するため。代わりに冒頭で
+// `process.env` / `process.exit` という Node 専用 API を参照することで
+// Web ターゲットへの import 経路を物理的に閉じる (rules/api.md 「サーバ専用
+// モジュールの隔離」が許容する手段)。
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;

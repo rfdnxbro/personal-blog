@@ -64,7 +64,7 @@ export default route
 ポイント:
 
 - `zValidator` を使えば 400 + zod issue を自動で返してくれる。自前で `try / catch` しない。
-- Supabase クライアントは `src/lib/supabase/server.ts` 経由の **authenticated client** を使う。`@supabase/supabase-js` を直接 import しない。`SUPABASE_SERVICE_ROLE_KEY` を使う `createClient` は [.claude/rules/api.md の「認可とサニタイズの責務」](../../rules/api.md) で列挙した 3 経路のみ。
+- Supabase クライアントは `src/lib/supabase/server.ts` 経由の **authenticated client** を使う。`@supabase/supabase-js` を直接 import しない。`SUPABASE_SECRET_KEY` を使う `createClient` は [.claude/rules/api.md の「認可とサニタイズの責務」](../../rules/api.md) で列挙した 3 経路のみ。
 - 認可判定は RLS に任せる。Hono ルート内で `if (user.role !== 'admin')` のような分岐を書かない (RLS で弾ければ supabase クライアントが error を返す)。
 - レスポンスは必ず `c.json()` で構造化して返す。
 
@@ -135,6 +135,6 @@ pnpm build
 - [ ] state-changing route は CSRF/Origin middleware を通過している
 - [ ] 匿名 / 未認証 endpoint なら rate limit + Turnstile + honeypot + 入力上限 (2000 char / URL 2 個) の 4 点セットを実装した
 - [ ] 認可判定は RLS に委譲し、Hono 内で role 分岐を書いていない
-- [ ] `SUPABASE_SERVICE_ROLE_KEY` を `'use client'` 配下に漏らしていない
+- [ ] `SUPABASE_SECRET_KEY` を `'use client'` 配下に漏らしていない
 - [ ] route 単体テストを `app.request()` で書いた
 - [ ] `pnpm lint && pnpm typecheck && pnpm test && pnpm build` が緑

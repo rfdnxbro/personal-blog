@@ -33,9 +33,9 @@ pnpm install
 cp .env.local.example .env.local
 # .env.local を編集し以下を埋める:
 #   NEXT_PUBLIC_SUPABASE_URL
-#   NEXT_PUBLIC_SUPABASE_ANON_KEY
-#   SUPABASE_SERVICE_ROLE_KEY  # サーバ専用、絶対クライアントに出さない
-#   ADMIN_EMAIL                # 初期 admin の Google アカウント
+#   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY  # Supabase 新仕様の publishable key
+#   SUPABASE_SECRET_KEY                   # サーバ専用、絶対クライアントに出さない
+#   ADMIN_EMAIL                           # 初期 admin の Google アカウント
 
 # 開発サーバ起動
 pnpm dev

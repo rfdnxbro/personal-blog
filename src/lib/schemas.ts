@@ -18,7 +18,8 @@ export type PostStatus = z.infer<typeof postStatus>;
 
 export const createPostBody = z.object({
   title: z.string().min(1).max(200),
-  slug,
+  // slug は省略可能。route 側で未指定なら title から slugify する。
+  slug: slug.optional(),
   content_md: z.string().min(1),
   status: postStatus.default("draft"),
 });
@@ -26,6 +27,7 @@ export type CreatePostBody = z.infer<typeof createPostBody>;
 
 export const updatePostBody = z.object({
   title: z.string().min(1).max(200).optional(),
+  slug: slug.optional(),
   content_md: z.string().min(1).optional(),
   status: postStatus.optional(),
 });

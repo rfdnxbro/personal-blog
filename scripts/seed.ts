@@ -1,3 +1,8 @@
+// `.env` をプロセス開始時に process.env へ読み込む。Next.js の dev/build と違い
+// tsx で直接実行するスクリプトには env 自動読み込みが効かないため明示的に読む。
+// 副作用 import なので他の import より前に置く。
+import "dotenv/config";
+
 import { createClient } from "@supabase/supabase-js";
 
 // secret-key: seed only — 初期 admin upsert 1 経路のみで Supabase の secret key を握る

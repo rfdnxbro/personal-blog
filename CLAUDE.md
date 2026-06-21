@@ -40,7 +40,7 @@ Claude Code 向けプロジェクト規約。詳細仕様は [PLAN.md](./PLAN.md
 - **匿名コメント API はスパム対策 4 点セット必須**: rate limit + Cloudflare Turnstile + honeypot + URL 数 / 文字数上限 (詳細は [PLAN.md](./PLAN.md#コメント-api-のスパム--abuse-対策-phase-1-必須要件))
 - **RLS 既定 ON**: 全テーブルで `enable row level security`。`disable row level security` を書かない
 - **マイグレーション命名**: `supabase/migrations/NNNN_snake_case.sql` (例: `0003_handle_new_user.sql`)。連番で順序保証
-- **環境変数**: 機密は `.env.local` (gitignore)、本番は Vercel env (production + preview)、CI は GitHub Actions secrets。**実メール・キーは絶対コミットしない**
+- **環境変数**: 機密は `.env` (gitignore)、本番は Vercel env (production + preview)、CI は GitHub Actions secrets。サンプルだけ `.env.example` に置く。**実メール・キーは絶対コミットしない**
 - **Server Component 優先**: `'use client'` は最小限 (フォームの onChange やインタラクティブ UI のみ)
 - **`next/image` と `next/link`**: 生 `<img>` / `<a href>` で同等処理を書かない (Biome に Next 用ルールが無いため、規約で担保)
 

@@ -79,7 +79,7 @@ export default route
 
 - `SUPABASE_SECRET_KEY` を参照してよいのは **上記「認可とサニタイズの責務」で列挙した経路のみ**。
 - `src/lib/supabase/client.ts` および `'use client'` 配下のいかなるモジュールからも参照禁止。クライアントバンドルへの混入は重大インシデント扱い。
-- `.env.local` / Vercel env / GitHub Actions secrets 以外の場所に書かない。コード上で直接文字列リテラルを書かない。
+- `.env` / Vercel env / GitHub Actions secrets 以外の場所に書かない。コード上で直接文字列リテラルを書かない。
 
 ## エラーハンドリング
 

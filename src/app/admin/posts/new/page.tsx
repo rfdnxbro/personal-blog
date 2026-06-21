@@ -1,10 +1,18 @@
 import MarkdownEditor from "@/components/MarkdownEditor";
+import { createPostAction } from "../_actions";
 
+// admin 専用 UI なので動的レンダリング (プリレンダリングしない)。
+export const dynamic = "force-dynamic";
+
+// admin UI は Server Action 直結 (CLAUDE.md 「Server Component 優先」)。
+// HTML form を Hono route に直送りすると content-type が application/x-www-form-urlencoded に
+// なり zValidator("json") と噛み合わないため、フォーム送信は Next の Server Action 経由で
+// Supabase を直接叩く (RLS が認可するので Hono を通す必然性は無い)。
 export default function NewPostPage() {
   return (
     <main className="mx-auto max-w-3xl p-6">
       <h1 className="mb-6 text-2xl font-bold">新規記事</h1>
-      <form action="/api/posts" method="post" className="space-y-4">
+      <form action={createPostAction} className="space-y-4">
         <label className="flex flex-col gap-2">
           <span className="text-sm font-medium">タイトル</span>
           <input

@@ -238,6 +238,162 @@ describe("GET /posts", () => {
   });
 });
 
+describe("POST /posts (mapDbError edge cases)", () => {
+  it("returns 400 on NOT NULL violation (23502)", async () => {
+    // Arrange — editor 未紐付け等で author_id が null になるケースを想定。
+    const fromStub = makeFromStub();
+    fromStub.single.mockResolvedValue({
+      data: null,
+      error: { code: "23502", message: "null value in column" },
+    });
+    vi.mocked(createServerClient).mockResolvedValue(
+      // biome-ignore lint/suspicious/noExplicitAny: テスト用 supabase stub
+      makeSupabase(fromStub) as any,
+    );
+
+    const app = buildApp({
+      user: { id: "u1", email: "u@example.com" },
+      editor: null,
+    });
+
+    // Act
+    const res = await app.request("/posts", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "hello",
+        content_md: "# hi",
+      }),
+    });
+
+    // Assert
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("PATCH /posts/:id", () => {
+  it("returns 401 when not authenticated", async () => {
+    // Arrange
+    const app = buildApp({ user: null, editor: null });
+
+    // Act
+    const res = await app.request(
+      "/posts/11111111-1111-4111-8111-111111111111",
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title: "updated" }),
+      },
+    );
+
+    // Assert
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 403 when RLS forbids update", async () => {
+    // Arrange
+    const fromStub = makeFromStub();
+    fromStub.single.mockResolvedValue({
+      data: null,
+      error: { code: "42501", message: "permission denied" },
+    });
+    vi.mocked(createServerClient).mockResolvedValue(
+      // biome-ignore lint/suspicious/noExplicitAny: テスト用 supabase stub
+      makeSupabase(fromStub) as any,
+    );
+
+    const app = buildApp({
+      user: { id: "u1", email: "u@example.com" },
+      editor: { id: "e1", role: "editor" },
+    });
+
+    // Act
+    const res = await app.request(
+      "/posts/11111111-1111-4111-8111-111111111111",
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title: "updated" }),
+      },
+    );
+
+    // Assert
+    expect(res.status).toBe(403);
+  });
+
+  it("sets published_at when status flips to published", async () => {
+    // Arrange
+    const fromStub = makeFromStub();
+    fromStub.single.mockResolvedValue({
+      data: { id: "p1", status: "published" },
+      error: null,
+    });
+    vi.mocked(createServerClient).mockResolvedValue(
+      // biome-ignore lint/suspicious/noExplicitAny: テスト用 supabase stub
+      makeSupabase(fromStub) as any,
+    );
+
+    const app = buildApp({
+      user: { id: "u1", email: "u@example.com" },
+      editor: { id: "e1", role: "editor" },
+    });
+
+    // Act
+    const res = await app.request(
+      "/posts/11111111-1111-4111-8111-111111111111",
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: "published" }),
+      },
+    );
+
+    // Assert
+    expect(res.status).toBe(200);
+    const updateArg = fromStub.update.mock.calls[0]?.[0] as {
+      status: string;
+      published_at?: string;
+    };
+    expect(updateArg.status).toBe("published");
+    expect(updateArg.published_at).toBeDefined();
+  });
+
+  it("does not set published_at when status stays draft", async () => {
+    // Arrange
+    const fromStub = makeFromStub();
+    fromStub.single.mockResolvedValue({
+      data: { id: "p1", status: "draft" },
+      error: null,
+    });
+    vi.mocked(createServerClient).mockResolvedValue(
+      // biome-ignore lint/suspicious/noExplicitAny: テスト用 supabase stub
+      makeSupabase(fromStub) as any,
+    );
+
+    const app = buildApp({
+      user: { id: "u1", email: "u@example.com" },
+      editor: { id: "e1", role: "editor" },
+    });
+
+    // Act
+    const res = await app.request(
+      "/posts/11111111-1111-4111-8111-111111111111",
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title: "still draft" }),
+      },
+    );
+
+    // Assert
+    expect(res.status).toBe(200);
+    const updateArg = fromStub.update.mock.calls[0]?.[0] as {
+      published_at?: string;
+    };
+    expect(updateArg.published_at).toBeUndefined();
+  });
+});
+
 describe("DELETE /posts/:id", () => {
   it("returns 401 when not authenticated", async () => {
     // Arrange
@@ -253,5 +409,64 @@ describe("DELETE /posts/:id", () => {
 
     // Assert
     expect(res.status).toBe(401);
+  });
+
+  it("returns 403 when RLS forbids delete", async () => {
+    // Arrange — Supabase の delete chain は eq() で最終 await されるため、
+    // eq の resolve 値で stub する。
+    const fromStub = makeFromStub();
+    fromStub.eq = vi.fn().mockResolvedValue({
+      data: null,
+      error: { code: "42501", message: "permission denied" },
+    }) as ChainStub["eq"];
+    vi.mocked(createServerClient).mockResolvedValue(
+      // biome-ignore lint/suspicious/noExplicitAny: テスト用 supabase stub
+      makeSupabase(fromStub) as any,
+    );
+
+    const app = buildApp({
+      user: { id: "u1", email: "u@example.com" },
+      editor: { id: "e1", role: "editor" },
+    });
+
+    // Act
+    const res = await app.request(
+      "/posts/11111111-1111-4111-8111-111111111111",
+      {
+        method: "DELETE",
+      },
+    );
+
+    // Assert
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 200 ok when delete succeeds", async () => {
+    // Arrange
+    const fromStub = makeFromStub();
+    fromStub.eq = vi.fn().mockResolvedValue({
+      data: null,
+      error: null,
+    }) as ChainStub["eq"];
+    vi.mocked(createServerClient).mockResolvedValue(
+      // biome-ignore lint/suspicious/noExplicitAny: テスト用 supabase stub
+      makeSupabase(fromStub) as any,
+    );
+
+    const app = buildApp({
+      user: { id: "u1", email: "u@example.com" },
+      editor: { id: "e1", role: "editor" },
+    });
+
+    // Act
+    const res = await app.request(
+      "/posts/11111111-1111-4111-8111-111111111111",
+      {
+        method: "DELETE",
+      },
+    );
+
+    // Assert
+    expect(res.status).toBe(200);
   });
 });

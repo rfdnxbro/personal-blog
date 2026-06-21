@@ -2,6 +2,10 @@ import { notFound } from "next/navigation";
 import PostBody from "@/components/PostBody";
 import { createServerClient } from "@/lib/supabase/server";
 
+// /posts/[slug] も createServerClient (cookies) を叩くため動的レンダリング。
+// CI の build 段階で env が無くてもプリレンダリングを試みないようにする。
+export const dynamic = "force-dynamic";
+
 type Props = {
   params: Promise<{ slug: string }>;
 };

@@ -64,10 +64,17 @@ const route = new Hono<AppEnv>()
       const { id } = c.req.valid("param");
       const body = c.req.valid("json");
 
+      // status を published に切り替えるタイミングで published_at を 1 度だけセットする
+      // (アプリ層明示更新方針、rules/supabase.md 「両用禁止」)。
+      const update: Record<string, unknown> = { ...body };
+      if (body.status === "published") {
+        update.published_at = new Date().toISOString();
+      }
+
       const supabase = await createServerClient();
       const { data, error } = await supabase
         .from("posts")
-        .update(body)
+        .update(update)
         .eq("id", id)
         .select()
         .single();

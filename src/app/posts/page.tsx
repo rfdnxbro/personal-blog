@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { createServerClient } from "@/lib/supabase/server";
 
+// /posts は createServerClient (cookies に依存) を毎リクエストで叩く動的ページ。
+// プリレンダリング時に env が無い CI で落ちないよう動的レンダリングを強制する。
+export const dynamic = "force-dynamic";
+
 type PostRow = {
   id: string;
   slug: string;

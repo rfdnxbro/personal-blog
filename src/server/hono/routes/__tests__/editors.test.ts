@@ -3,12 +3,42 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppEnv } from "../../app";
 import type { SessionEditor, SessionUser } from "../../middleware/session";
 
+vi.mock("@/lib/supabase/server", () => ({
+  createServerClient: vi.fn(),
+}));
+
 vi.mock("@supabase/supabase-js", () => ({
   createClient: vi.fn(),
 }));
 
 import { createClient } from "@supabase/supabase-js";
+import { createServerClient } from "@/lib/supabase/server";
 import editors from "../editors";
+
+type EditorsFromStub = {
+  insert: ReturnType<typeof vi.fn>;
+  select: ReturnType<typeof vi.fn>;
+  single: ReturnType<typeof vi.fn>;
+  delete: ReturnType<typeof vi.fn>;
+  eq: ReturnType<typeof vi.fn>;
+};
+
+function makeEditorsFromStub(): EditorsFromStub {
+  const stub: EditorsFromStub = {
+    insert: vi.fn().mockReturnThis() as EditorsFromStub["insert"],
+    select: vi.fn().mockReturnThis() as EditorsFromStub["select"],
+    single: vi.fn(),
+    delete: vi.fn().mockReturnThis() as EditorsFromStub["delete"],
+    eq: vi.fn().mockResolvedValue({ data: null, error: null }),
+  };
+  return stub;
+}
+
+function makeAuthenticatedSupabase(fromStub: EditorsFromStub) {
+  return {
+    from: vi.fn().mockReturnValue(fromStub),
+  };
+}
 
 function buildApp(opts: {
   user?: SessionUser | null;
@@ -26,6 +56,7 @@ function buildApp(opts: {
 
 beforeEach(() => {
   vi.mocked(createClient).mockReset();
+  vi.mocked(createServerClient).mockReset();
   process.env.SUPABASE_SECRET_KEY = "sb_secret_test";
   process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co";
 });
@@ -72,31 +103,32 @@ describe("POST /editors/invite", () => {
     expect(res.status).toBe(403);
   });
 
-  it("returns 200 when admin invites new editor", async () => {
+  it("inserts editors row first, then invites via secret key", async () => {
     // Arrange
+    const fromStub = makeEditorsFromStub();
+    fromStub.single.mockResolvedValue({
+      data: {
+        id: "e2",
+        email: "new@example.com",
+        role: "editor",
+        display_name: "New",
+      },
+      error: null,
+    });
+    vi.mocked(createServerClient).mockResolvedValue(
+      // biome-ignore lint/suspicious/noExplicitAny: テスト用 supabase stub
+      makeAuthenticatedSupabase(fromStub) as any,
+    );
+
     const inviteByEmail = vi.fn().mockResolvedValue({
       data: { user: { id: "new-uid" } },
       error: null,
     });
-    const fromStub = {
-      insert: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({
-        data: {
-          id: "e2",
-          email: "new@example.com",
-          role: "editor",
-          display_name: "New",
-        },
-        error: null,
-      }),
-    };
-    const stubClient = {
+    const adminClient = {
       auth: { admin: { inviteUserByEmail: inviteByEmail } },
-      from: vi.fn().mockReturnValue(fromStub),
     };
     // biome-ignore lint/suspicious/noExplicitAny: テスト用 supabase stub
-    vi.mocked(createClient).mockReturnValue(stubClient as any);
+    vi.mocked(createClient).mockReturnValue(adminClient as any);
 
     const app = buildApp({
       user: { id: "u1", email: "admin@example.com" },
@@ -116,6 +148,60 @@ describe("POST /editors/invite", () => {
 
     // Assert
     expect(res.status).toBe(200);
+    expect(fromStub.insert).toHaveBeenCalledWith({
+      email: "new@example.com",
+      role: "editor",
+      display_name: "New",
+    });
     expect(inviteByEmail).toHaveBeenCalledWith("new@example.com");
+  });
+
+  it("rolls back editors row when invite fails", async () => {
+    // Arrange
+    const fromStub = makeEditorsFromStub();
+    fromStub.single.mockResolvedValue({
+      data: {
+        id: "e2",
+        email: "new@example.com",
+        role: "editor",
+        display_name: "New",
+      },
+      error: null,
+    });
+    vi.mocked(createServerClient).mockResolvedValue(
+      // biome-ignore lint/suspicious/noExplicitAny: テスト用 supabase stub
+      makeAuthenticatedSupabase(fromStub) as any,
+    );
+
+    const inviteByEmail = vi.fn().mockResolvedValue({
+      data: null,
+      error: { message: "invite quota exceeded" },
+    });
+    const adminClient = {
+      auth: { admin: { inviteUserByEmail: inviteByEmail } },
+    };
+    // biome-ignore lint/suspicious/noExplicitAny: テスト用 supabase stub
+    vi.mocked(createClient).mockReturnValue(adminClient as any);
+
+    const app = buildApp({
+      user: { id: "u1", email: "admin@example.com" },
+      editor: { id: "e1", role: "admin" },
+    });
+
+    // Act
+    const res = await app.request("/editors/invite", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "new@example.com",
+        role: "editor",
+        display_name: "New",
+      }),
+    });
+
+    // Assert
+    expect(res.status).toBe(500);
+    expect(fromStub.delete).toHaveBeenCalled();
+    expect(fromStub.eq).toHaveBeenCalledWith("id", "e2");
   });
 });

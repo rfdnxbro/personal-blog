@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { createServerClient } from "@/lib/supabase/server";
 
+// このページは cookie + RLS でユーザー固有データを返す。
+// ビルド時のプリレンダリング (env 未設定の CI で落ちる) を避けるため動的レンダリングを強制する。
+export const dynamic = "force-dynamic";
+
 type PostRow = {
   id: string;
   slug: string;

@@ -22,7 +22,7 @@ Claude Code 向けプロジェクト規約。詳細仕様は [PLAN.md](./PLAN.md
 - `src/lib/` — Supabase クライアント (`supabase/{server,client,middleware}.ts`)、Markdown サニタイズ (`markdown.ts`)、zod スキーマ (`schemas.ts`)
 - `src/components/` — UI コンポーネント
 - `src/middleware.ts` — Next root middleware (認証ガード)
-- `scripts/` — 運用スクリプト (`seed.ts` などのサーバ専用ユーティリティ。`SUPABASE_SERVICE_ROLE_KEY` の利用可否は下記実装規約で経路限定)
+- `scripts/` — 運用スクリプト (`seed.ts` などのサーバ専用ユーティリティ。`SUPABASE_SECRET_KEY` の利用可否は下記実装規約で経路限定)
 - `supabase/migrations/` — SQL マイグレーション (`NNNN_snake.sql`)
 - `e2e/` — Playwright E2E
 - `.claude/` — Claude Code ローカル規約 (`rules/`, `skills/`, `settings.json`)
@@ -34,7 +34,7 @@ Claude Code 向けプロジェクト規約。詳細仕様は [PLAN.md](./PLAN.md
 - **Hono ルートは `src/app/api/[[...route]]/route.ts` で 1 箇所だけマウント**。`export const runtime = 'nodejs'` 必須 (`@supabase/ssr` の cookie 操作が edge では崩れる)
 - **Hono の route 追加**: `src/server/hono/routes/<name>.ts` を新規作成し、`app.ts` のバレル (`routes/*.ts` を自動 import + 統一登録) に乗せる。新規 route 追加 PR では `app.ts` を直接いじらない (PR 並列化時の衝突回避)
 - **Supabase クライアント**: `@supabase/ssr` の `createServerClient` / `createBrowserClient` を経由 (`src/lib/supabase/`)。Hono は `createServerClient` の authenticated client 経由のみ。`@supabase/supabase-js` を Next コンポーネントから直接呼ばない
-- **`SUPABASE_SERVICE_ROLE_KEY` はサーバ専用 + 経路を絞る**。利用箇所は `scripts/seed.ts` と `auth.users` トリガー内、招待時の `auth.admin.inviteUserByEmail` 1 箇所のみ。`src/lib/supabase/client.ts` および `'use client'` 配下のモジュールから絶対参照しない
+- **`SUPABASE_SECRET_KEY` はサーバ専用 + 経路を絞る**。Supabase の新 API key 仕様 (`sb_secret_***`、Legacy の service_role JWT を置き換える) を使う。利用箇所は `scripts/seed.ts` と `auth.users` トリガー内、招待時の `auth.admin.inviteUserByEmail` 1 箇所のみ。`src/lib/supabase/client.ts` および `'use client'` 配下のモジュールから絶対参照しない
 - **`import 'server-only'` の宣言義務**: `src/lib/supabase/server.ts` と `src/server/hono/**` の入口ファイル冒頭で必ず宣言し、`'use client'` への混入を build time でエラーにする
 - **state-changing API は Origin / CSRF 検証必須**: `hono/csrf` または Origin ヘッダ検証を通過しない POST/PUT/DELETE は 403 を返す (詳細は [.claude/rules/api.md](./.claude/rules/api.md))
 - **匿名コメント API はスパム対策 4 点セット必須**: rate limit + Cloudflare Turnstile + honeypot + URL 数 / 文字数上限 (詳細は [PLAN.md](./PLAN.md#コメント-api-のスパム--abuse-対策-phase-1-必須要件))

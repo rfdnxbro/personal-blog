@@ -45,9 +45,9 @@ export default route
 ## 認可とサニタイズの責務 (Phase 1 アーキ判断)
 
 - **認可は Postgres RLS が唯一の真実の源**。Hono ルートで認可判定を再実装しない。Hono は zod 検証 + セッション取り出し + 複合トランザクション + エラーマッピングだけを担う薄層。
-- Hono は **必ず `createServerClient` (authenticated client) 経由** で Supabase を叩く。`SUPABASE_SERVICE_ROLE_KEY` を使う `createClient` の利用箇所は以下に限定する:
+- Hono は **必ず `createServerClient` (authenticated client) 経由** で Supabase を叩く。`SUPABASE_SECRET_KEY` (Supabase 新仕様の `sb_secret_***`、Legacy の service_role JWT を置き換える) を使う `createClient` の利用箇所は以下に限定する:
   - `scripts/seed.ts` (初期 admin upsert)
-  - 招待時の `auth.admin.inviteUserByEmail` を呼ぶ admin 専用 route 1 箇所 (明示コメント `// service-role: invite only` を付ける)
+  - 招待時の `auth.admin.inviteUserByEmail` を呼ぶ admin 専用 route 1 箇所 (明示コメント `// secret-key: invite only` を付ける)
   - `auth.users` トリガー `handle_new_user` の内部 (Postgres 内、Node 側には漏れない)
 - サニタイズは Hono ルートでは行わない。表示時に `src/lib/markdown.ts` の `renderMarkdownToSafeHtml()` を通す方式 (詳細は [components.md](./components.md))。
 
@@ -77,7 +77,7 @@ export default route
 
 ## 機密の取り扱い
 
-- `SUPABASE_SERVICE_ROLE_KEY` を参照してよいのは **上記「認可とサニタイズの責務」で列挙した経路のみ**。
+- `SUPABASE_SECRET_KEY` を参照してよいのは **上記「認可とサニタイズの責務」で列挙した経路のみ**。
 - `src/lib/supabase/client.ts` および `'use client'` 配下のいかなるモジュールからも参照禁止。クライアントバンドルへの混入は重大インシデント扱い。
 - `.env.local` / Vercel env / GitHub Actions secrets 以外の場所に書かない。コード上で直接文字列リテラルを書かない。
 
@@ -103,6 +103,6 @@ Supabase クライアントが返す `error.code` (PostgreSQL SQLSTATE) を Hono
 
 ## 運用スクリプト (`scripts/`)
 
-- `tsx` で実行する Node スクリプト。`SUPABASE_SERVICE_ROLE_KEY` を使う処理はここに集約する (例: `scripts/seed.ts`)。
+- `tsx` で実行する Node スクリプト。`SUPABASE_SECRET_KEY` を使う処理はここに集約する (例: `scripts/seed.ts`)。
 - 環境変数の必須チェックを冒頭で行い、欠落時は `process.exit(1)` する。
 - import エイリアス (`@/`) は使ってよいが、`'use client'` モジュールを巻き込まないこと。

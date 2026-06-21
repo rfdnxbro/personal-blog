@@ -30,8 +30,8 @@ corepack prepare pnpm@latest --activate
 pnpm install
 
 # 環境変数 (Phase 1 で必要)
-cp .env.local.example .env.local
-# .env.local を編集し以下を埋める:
+cp .env.example .env
+# .env を編集し以下を埋める:
 #   NEXT_PUBLIC_SUPABASE_URL
 #   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY  # Supabase 新仕様の publishable key
 #   SUPABASE_SECRET_KEY                   # サーバ専用、絶対クライアントに出さない
@@ -93,7 +93,7 @@ Phase 1 で追加されるディレクトリ (詳細は [PLAN.md](./PLAN.md#phas
 
 初期 admin の Google メールアドレスは環境変数 `ADMIN_EMAIL` から供給する。**コード/SQL にハードコードしない**。
 
-- ローカル: `.env.local` の `ADMIN_EMAIL`
+- ローカル: `.env` の `ADMIN_EMAIL`
 - 本番: Vercel の Environment Variables (production + preview)
 - CI: GitHub Actions の secrets
 

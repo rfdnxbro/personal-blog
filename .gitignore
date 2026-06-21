@@ -13,14 +13,19 @@ next-env.d.ts
 # Vercel
 .vercel/
 
+# Supabase CLI (local link / login state, branches など)
+supabase/.temp/
+supabase/.branches/
+
 # Test artefacts
 coverage/
 playwright-report/
 test-results/
 
 # Environment
-.env*.local
-!.env.local.example
+# 機密 env (.env / .env.local / .env.<NODE_ENV>.local 等) は全部除外、サンプルのみ追跡する。
+.env*
+!.env.example
 
 # Logs
 *.log

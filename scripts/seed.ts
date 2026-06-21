@@ -1,9 +1,9 @@
-import "server-only";
+// tsx 経由の直接実行では Next.js の env 自動読み込みが効かないため明示的に .env を読む
+import "dotenv/config";
 
 import { createClient } from "@supabase/supabase-js";
 
-// secret-key: seed only — 初期 admin upsert 1 経路のみで Supabase の secret key を握る
-// (rules/api.md 「機密の取り扱い」要件)。
+// secret-key: seed only — server-only は付けない (tsx 直接実行で throw する); Node API で import 経路を閉じる
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
@@ -42,4 +42,8 @@ async function main() {
   console.log(`[seed] admin ready: id=${data.id} email=${ADMIN_EMAIL}`);
 }
 
-await main();
+// tsx の CJS 経路で top-level await が禁止されるため main().catch() 形式にする
+main().catch((err) => {
+  console.error(`[seed] unexpected error: ${err}`);
+  process.exit(1);
+});

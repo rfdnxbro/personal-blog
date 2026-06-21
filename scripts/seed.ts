@@ -42,4 +42,11 @@ async function main() {
   console.log(`[seed] admin ready: id=${data.id} email=${ADMIN_EMAIL}`);
 }
 
-await main();
+// tsx は .ts を CJS 経由でロードするケースがあり、トップレベル await が出力時に
+// "Top-level await is currently not supported with the CJS output format" で落ちる。
+// main().catch(...) 形式に揃えれば ESM / CJS どちらでも動く。fail() 経由の正常系
+// 異常終了は中で process.exit(1) するため、ここで拾うのは予期しない throw だけ。
+main().catch((err) => {
+  console.error(`[seed] unexpected error: ${err}`);
+  process.exit(1);
+});

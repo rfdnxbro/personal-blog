@@ -13,6 +13,10 @@ next-env.d.ts
 # Vercel
 .vercel/
 
+# Supabase CLI (local link / login state, branches など)
+supabase/.temp/
+supabase/.branches/
+
 # Test artefacts
 coverage/
 playwright-report/

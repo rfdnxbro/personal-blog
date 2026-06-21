@@ -66,3 +66,8 @@ $$;
 
 revoke all on function public.cleanup_rate_limits() from public;
 grant execute on function public.cleanup_rate_limits() to authenticated;
+
+-- PostgREST から見えるよう明示 grant (Supabase の Automatically expose new tables を OFF 運用するため)。
+-- 匿名コメント API は未ログイン (anon) からも叩かれ、increment_rate_limit RPC は SECURITY INVOKER で
+-- 呼び出し元権限を要求するため SELECT/INSERT/UPDATE を anon にも渡す必要がある。DELETE は cleanup 関数経由のみ。
+grant select, insert, update on public.rate_limits to anon, authenticated;

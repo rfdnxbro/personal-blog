@@ -58,3 +58,7 @@ $$;
 
 revoke all on function public.current_editor_role() from public;
 grant execute on function public.current_editor_role() to authenticated;
+
+-- PostgREST から見えるよう明示 grant (Supabase の Automatically expose new tables を OFF 運用するため)。
+-- editors は認証済みユーザーのみ触れる (anon は不要)。
+grant select, insert, update, delete on public.editors to authenticated;

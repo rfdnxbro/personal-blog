@@ -33,3 +33,9 @@ create policy "comments_delete_editor"
   on public.comments
   for delete
   using (public.current_editor_role() in ('admin', 'editor'));
+
+-- PostgREST から見えるよう明示 grant (Supabase の Automatically expose new tables を OFF 運用するため)。
+-- SELECT / INSERT は匿名公開 (RLS で全件許可)、DELETE は authenticated のみ (RLS で admin/editor に絞る)。
+-- UPDATE 経路は存在しないので grant しない。
+grant select, insert on public.comments to anon, authenticated;
+grant delete on public.comments to authenticated;

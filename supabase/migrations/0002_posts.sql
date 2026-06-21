@@ -73,3 +73,8 @@ create trigger posts_set_updated_at
   before update on public.posts
   for each row
   execute function public.touch_updated_at();
+
+-- PostgREST から見えるよう明示 grant (Supabase の Automatically expose new tables を OFF 運用するため)。
+-- 公開記事の SELECT は anon にも必要。書き込みは authenticated のみ (RLS が admin/editor に絞る)。
+grant select on public.posts to anon, authenticated;
+grant insert, update, delete on public.posts to authenticated;

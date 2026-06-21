@@ -204,4 +204,71 @@ describe("POST /editors/invite", () => {
     expect(fromStub.delete).toHaveBeenCalled();
     expect(fromStub.eq).toHaveBeenCalledWith("id", "e2");
   });
+
+  it("logs structured error when rollback delete fails (does not silently swallow)", async () => {
+    // Arrange — invite が失敗 → rollback delete も失敗するケース。
+    // rollback の error は silently swallow せず構造化ログで残すのが期待動作。
+    const fromStub = makeEditorsFromStub();
+    fromStub.single.mockResolvedValue({
+      data: {
+        id: "e2",
+        email: "new@example.com",
+        role: "editor",
+        display_name: "New",
+      },
+      error: null,
+    });
+    fromStub.eq = vi.fn().mockResolvedValue({
+      data: null,
+      error: { code: "42501", message: "rollback rls denied" },
+    }) as EditorsFromStub["eq"];
+    vi.mocked(createServerClient).mockResolvedValue(
+      // biome-ignore lint/suspicious/noExplicitAny: テスト用 supabase stub
+      makeAuthenticatedSupabase(fromStub) as any,
+    );
+
+    const inviteByEmail = vi.fn().mockResolvedValue({
+      data: null,
+      error: { message: "invite quota exceeded" },
+    });
+    const adminClient = {
+      auth: { admin: { inviteUserByEmail: inviteByEmail } },
+    };
+    // biome-ignore lint/suspicious/noExplicitAny: テスト用 supabase stub
+    vi.mocked(createClient).mockReturnValue(adminClient as any);
+
+    const consoleSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    const app = buildApp({
+      user: { id: "u1", email: "admin@example.com" },
+      editor: { id: "e1", role: "admin" },
+    });
+
+    // Act
+    const res = await app.request("/editors/invite", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "new@example.com",
+        role: "editor",
+        display_name: "New",
+      }),
+    });
+
+    // Assert — API レスポンスは invite エラー由来の 500 を返し続けるが、
+    // rollback の失敗は構造化ログで追えるようになっている。
+    expect(res.status).toBe(500);
+    expect(consoleSpy).toHaveBeenCalled();
+    const logged = consoleSpy.mock.calls[0]?.[0];
+    expect(logged).toMatchObject({
+      level: "error",
+      msg: "editor_rollback_failed",
+      editor_id: "e2",
+      code: "42501",
+    });
+
+    consoleSpy.mockRestore();
+  });
 });

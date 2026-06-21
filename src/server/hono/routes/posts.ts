@@ -64,14 +64,31 @@ const route = new Hono<AppEnv>()
       const { id } = c.req.valid("param");
       const body = c.req.valid("json");
 
-      // status を published に切り替えるタイミングで published_at を 1 度だけセットする
-      // (アプリ層明示更新方針、rules/supabase.md 「両用禁止」)。
+      const supabase = await createServerClient();
+
+      // status を published に切り替える「初回」のみ published_at をセットする。
+      // 既に published_at が入っている post を再 PATCH しても published_at を
+      // 現在時刻で上書きしないこと。
+      // 実装方針: PATCH 前に現状の published_at を SELECT で取り、
+      //   - 新 status が "published" かつ 既存 published_at が null のときだけ now() を埋める。
+      //   - それ以外は body の差分だけ流し、published_at には触れない (上書きしない)。
+      // RLS で SELECT 不可なら 403、行が無ければ 404 を返し、UPDATE まで進めない。
       const update: Record<string, unknown> = { ...body };
       if (body.status === "published") {
-        update.published_at = new Date().toISOString();
+        const { data: current, error: selectError } = await supabase
+          .from("posts")
+          .select("published_at")
+          .eq("id", id)
+          .single();
+        if (selectError) {
+          const m = mapDbError(selectError);
+          return c.json(m.body, m.status);
+        }
+        if (current?.published_at == null) {
+          update.published_at = new Date().toISOString();
+        }
       }
 
-      const supabase = await createServerClient();
       const { data, error } = await supabase
         .from("posts")
         .update(update)

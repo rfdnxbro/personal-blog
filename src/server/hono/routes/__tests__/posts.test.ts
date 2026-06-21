@@ -321,13 +321,18 @@ describe("PATCH /posts/:id", () => {
     expect(res.status).toBe(403);
   });
 
-  it("sets published_at when status flips to published", async () => {
-    // Arrange
+  it("sets published_at when status flips to published (current published_at is null)", async () => {
+    // Arrange — 1st single(): SELECT current row、2nd single(): UPDATE 結果。
     const fromStub = makeFromStub();
-    fromStub.single.mockResolvedValue({
-      data: { id: "p1", status: "published" },
-      error: null,
-    });
+    fromStub.single
+      .mockResolvedValueOnce({
+        data: { published_at: null, status: "draft" },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { id: "p1", status: "published" },
+        error: null,
+      });
     vi.mocked(createServerClient).mockResolvedValue(
       // biome-ignore lint/suspicious/noExplicitAny: テスト用 supabase stub
       makeSupabase(fromStub) as any,
@@ -361,10 +366,15 @@ describe("PATCH /posts/:id", () => {
   it("does not set published_at when status stays draft", async () => {
     // Arrange
     const fromStub = makeFromStub();
-    fromStub.single.mockResolvedValue({
-      data: { id: "p1", status: "draft" },
-      error: null,
-    });
+    fromStub.single
+      .mockResolvedValueOnce({
+        data: { published_at: null, status: "draft" },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { id: "p1", status: "draft" },
+        error: null,
+      });
     vi.mocked(createServerClient).mockResolvedValue(
       // biome-ignore lint/suspicious/noExplicitAny: テスト用 supabase stub
       makeSupabase(fromStub) as any,
@@ -390,6 +400,49 @@ describe("PATCH /posts/:id", () => {
     const updateArg = fromStub.update.mock.calls[0]?.[0] as {
       published_at?: string;
     };
+    expect(updateArg.published_at).toBeUndefined();
+  });
+
+  it("does NOT overwrite published_at when re-PATCH on already-published post", async () => {
+    // Arrange — 既に published な post (published_at 設定済み) に対する再 PATCH。
+    // 1st single(): SELECT で既存の published_at を返す、2nd single(): UPDATE 結果。
+    const existingPublishedAt = "2020-01-01T00:00:00.000Z";
+    const fromStub = makeFromStub();
+    fromStub.single
+      .mockResolvedValueOnce({
+        data: { published_at: existingPublishedAt, status: "published" },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { id: "p1", status: "published" },
+        error: null,
+      });
+    vi.mocked(createServerClient).mockResolvedValue(
+      // biome-ignore lint/suspicious/noExplicitAny: テスト用 supabase stub
+      makeSupabase(fromStub) as any,
+    );
+
+    const app = buildApp({
+      user: { id: "u1", email: "u@example.com" },
+      editor: { id: "e1", role: "editor" },
+    });
+
+    // Act
+    const res = await app.request(
+      "/posts/11111111-1111-4111-8111-111111111111",
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: "published", title: "edited" }),
+      },
+    );
+
+    // Assert
+    expect(res.status).toBe(200);
+    const updateArg = fromStub.update.mock.calls[0]?.[0] as {
+      published_at?: string;
+    };
+    // 既存の published_at は上書きされない (現時刻で上書きしないこと)。
     expect(updateArg.published_at).toBeUndefined();
   });
 });

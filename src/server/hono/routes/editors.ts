@@ -71,7 +71,22 @@ const route = new Hono<AppEnv>().post(
     //    失敗したら editors 行を rollback する (整合性のため)。
     const inviteResult = await inviteUserByEmailViaAdmin(body.email);
     if (inviteResult.error) {
-      await supabase.from("editors").delete().eq("id", data.id);
+      // rollback delete のエラーは API レスポンスに乗せず、構造化ログで残す。
+      // ここで握りつぶすと editors 行が孤立 (invite に紐づかない行) するため、
+      // 後で運用が追えるようにログ形式を固定する。
+      const { error: rollbackError } = await supabase
+        .from("editors")
+        .delete()
+        .eq("id", data.id);
+      if (rollbackError) {
+        console.error({
+          level: "error",
+          msg: "editor_rollback_failed",
+          editor_id: data.id,
+          code: rollbackError.code,
+          err: rollbackError.message,
+        });
+      }
       return c.json({ error: inviteResult.error.message }, 500);
     }
 

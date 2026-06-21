@@ -92,13 +92,25 @@ export async function updatePostAction(formData: FormData): Promise<void> {
   }
 
   const supabase = await createServerClient();
-  // status を published に切り替えるタイミングで published_at を 1 度だけセットする。
-  // 既に published 済みかどうかは DB トリガで担保するのが本来は綺麗だが、本 PR では
-  // app 層から明示更新で済ませる (rules/supabase.md の 「両用禁止」 と矛盾しないよう
-  // 0002_posts.sql に published_at のトリガーが無いことを前提)。
+  // status を published に切り替える「初回」のみ published_at をセットする。
+  // 既に published 済みの post を再保存しても published_at を現在時刻で上書きしない
+  // (Hono PATCH /posts/:id と同一ロジック)。
+  // 実装: 現状の published_at を SELECT し、新 status が "published" かつ
+  //       既存 published_at が null のときだけ now() を埋める。
+  // race condition は admin 操作 (同一ユーザーが同時編集しない前提) なので無視可能。
   const update: Record<string, unknown> = { ...bodyParsed.data };
   if (bodyParsed.data.status === "published") {
-    update.published_at = new Date().toISOString();
+    const { data: current, error: selectError } = await supabase
+      .from("posts")
+      .select("published_at")
+      .eq("id", idParsed.data.id)
+      .single();
+    if (selectError) {
+      throw new Error(`failed to load post: ${selectError.message}`);
+    }
+    if (current?.published_at == null) {
+      update.published_at = new Date().toISOString();
+    }
   }
 
   const { error } = await supabase

@@ -79,13 +79,28 @@ const route = new Hono<AppEnv>().post(
         .delete()
         .eq("id", data.id);
       if (rollbackError) {
+        // editor_id だけでは DB 上の orphan を特定しづらいため email も残す。
+        // operator はこの log を見て手動 cleanup (admin DB で editors 行を delete)
+        // を実行できるようにする。Phase 2 で admin DELETE /editors/:id を追加する
+        // までの暫定運用フロー。
         console.error({
           level: "error",
           msg: "editor_rollback_failed",
           editor_id: data.id,
+          email: body.email,
           code: rollbackError.code,
           err: rollbackError.message,
         });
+        // rollback まで失敗したケースは DB に orphan 行が残っている。
+        // caller が「再 invite すると 409 で詰む」状態を区別できるよう、
+        // 専用の error code を返す。
+        return c.json(
+          {
+            error: "invite_failed_rollback_failed",
+            message: inviteResult.error.message,
+          },
+          500,
+        );
       }
       return c.json({ error: inviteResult.error.message }, 500);
     }

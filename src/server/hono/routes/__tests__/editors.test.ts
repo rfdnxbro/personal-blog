@@ -257,8 +257,9 @@ describe("POST /editors/invite", () => {
       }),
     });
 
-    // Assert — API レスポンスは invite エラー由来の 500 を返し続けるが、
-    // rollback の失敗は構造化ログで追えるようになっている。
+    // Assert — API レスポンスは 500 を返し続けるが、rollback の失敗は
+    // 構造化ログ (email 込み) で追えるようになっており、かつ error body は
+    // distinct な "invite_failed_rollback_failed" で DB-orphan 状態を区別できる。
     expect(res.status).toBe(500);
     expect(consoleSpy).toHaveBeenCalled();
     const logged = consoleSpy.mock.calls[0]?.[0];
@@ -266,8 +267,15 @@ describe("POST /editors/invite", () => {
       level: "error",
       msg: "editor_rollback_failed",
       editor_id: "e2",
+      email: "new@example.com",
       code: "42501",
     });
+    const body = (await res.json()) as {
+      error: string;
+      message?: string;
+    };
+    expect(body.error).toBe("invite_failed_rollback_failed");
+    expect(body.message).toBe("invite quota exceeded");
 
     consoleSpy.mockRestore();
   });

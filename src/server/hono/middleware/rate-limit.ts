@@ -7,11 +7,22 @@ import { getClientIp } from "../lib/get-client-ip";
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
 
+// SupabaseClient 全体は厚すぎるので、ここで使う薄い shape だけ要求する。
+// routes/comments.ts と同じ duck typing 方針 (rules/testing.md DI 推奨)。
+export type SupabaseLikeForRateLimit = Pick<
+  Awaited<ReturnType<typeof createServerClient>>,
+  "from" | "rpc"
+>;
+
 export type RateLimitOptions = {
   // 識別子 (例: 'comments_post')。bucket キーに含めて他 route と分離する。
   key: string;
   perMinute: number;
   perHour: number;
+  // テスト時に stub を渡すための注入口。未指定なら createServerClient を毎回呼ぶ。
+  getSupabase?: () =>
+    | Promise<SupabaseLikeForRateLimit>
+    | SupabaseLikeForRateLimit;
 };
 
 function floorToBucket(now: number, unitMs: number): string {
@@ -22,6 +33,7 @@ function floorToBucket(now: number, unitMs: number): string {
 // 完全な sliding window ではなく「直前 1 分 / 1 時間にかぶるウィンドウ行の count 合計」で
 // 判定する近似実装 (粒度はバケットサイズに依存)。Phase 1 個人ブログ規模では十分。
 export function rateLimit(options: RateLimitOptions) {
+  const getSupabase = options.getSupabase ?? (() => createServerClient());
   return createMiddleware(async (c, next) => {
     const ip = getClientIp(c);
     const now = Date.now();
@@ -32,7 +44,7 @@ export function rateLimit(options: RateLimitOptions) {
     const minuteSince = new Date(now - MINUTE_MS).toISOString();
     const hourSince = new Date(now - HOUR_MS).toISOString();
 
-    const supabase = await createServerClient();
+    const supabase = await getSupabase();
 
     const [minutes, hours] = await Promise.all([
       supabase

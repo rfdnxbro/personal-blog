@@ -25,4 +25,17 @@ describe("GET /og", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type") ?? "").toMatch(/image\/png/);
   });
+
+  it("sets a long Cache-Control so CDNs can cache the rendered OG image", async () => {
+    // Arrange
+    const request = new Request("http://localhost:3000/og?title=hello");
+
+    // Act
+    const response = await GET(request);
+
+    // Assert
+    const cacheControl = response.headers.get("cache-control") ?? "";
+    expect(cacheControl).toMatch(/public/);
+    expect(cacheControl).toMatch(/max-age=\d+/);
+  });
 });

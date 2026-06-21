@@ -4,6 +4,9 @@ export const runtime = "edge";
 
 const SIZE = { width: 1200, height: 630 } as const;
 const TITLE_MAX = 80;
+// title クエリに紐づく OG 画像は実質 immutable (タイトル文字列の関数なので、
+// 同じクエリなら同じ画像になる)。CDN / ブラウザ両方に長めにキャッシュさせる。
+const CACHE_CONTROL = "public, immutable, max-age=86400";
 
 export async function GET(request: Request): Promise<Response> {
   const { searchParams } = new URL(request.url);
@@ -46,6 +49,9 @@ export async function GET(request: Request): Promise<Response> {
         {title}
       </div>
     </div>,
-    SIZE,
+    {
+      ...SIZE,
+      headers: { "Cache-Control": CACHE_CONTROL },
+    },
   );
 }

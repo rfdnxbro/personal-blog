@@ -3,7 +3,17 @@ import "server-only";
 import type { MetadataRoute } from "next";
 import { createServerClient } from "@/lib/supabase/server";
 
-type PublishedPostRow = { slug: string; updated_at: string | null };
+export type PublishedPostRow = { slug: string; updated_at: string | null };
+
+/**
+ * `posts.status = 'published'` の {slug, updated_at} を返すローダ。
+ * Next の MetadataRoute シグネチャに引数を増やせない都合で sitemap() に
+ * 注入できないため、テストでは `buildSitemap()` 経由で stub を渡す。
+ */
+export type PublishedPostsLoader = () => Promise<{
+  data: PublishedPostRow[] | null;
+  error: { message: string } | null;
+}>;
 
 function siteUrl(): string {
   return (process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000").replace(
@@ -12,7 +22,28 @@ function siteUrl(): string {
   );
 }
 
-export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+async function defaultLoader(): Promise<{
+  data: PublishedPostRow[] | null;
+  error: { message: string } | null;
+}> {
+  const supabase = await createServerClient();
+  const { data, error } = await supabase
+    .from("posts")
+    .select("slug, updated_at")
+    .eq("status", "published");
+  return {
+    data: (data ?? null) as PublishedPostRow[] | null,
+    error: error ? { message: error.message } : null,
+  };
+}
+
+/**
+ * sitemap entries を組み立てる pure helper。loader を差し替えれば
+ * Supabase を踏まずにテストできるよう DI 化してある。
+ */
+export async function buildSitemap(
+  loader: PublishedPostsLoader = defaultLoader,
+): Promise<MetadataRoute.Sitemap> {
   const base = siteUrl();
   const entries: MetadataRoute.Sitemap = [
     {
@@ -24,17 +55,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   ];
 
   try {
-    const supabase = await createServerClient();
-    const { data, error } = await supabase
-      .from("posts")
-      .select("slug, updated_at")
-      .eq("status", "published");
+    const { data, error } = await loader();
 
     if (error || !data) {
       return entries;
     }
 
-    for (const post of data as PublishedPostRow[]) {
+    for (const post of data) {
       entries.push({
         url: `${base}/posts/${post.slug}`,
         lastModified: post.updated_at ? new Date(post.updated_at) : new Date(),
@@ -47,4 +74,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }
 
   return entries;
+}
+
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  return buildSitemap();
 }

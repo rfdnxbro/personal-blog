@@ -1,34 +1,17 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
+import { buildSitemap } from "../sitemap";
 
-const createServerClientMock = vi.hoisted(() => vi.fn());
-
-vi.mock("@/lib/supabase/server", () => ({
-  createServerClient: createServerClientMock,
-}));
-
-afterEach(() => {
-  vi.clearAllMocks();
-});
-
-describe("sitemap", () => {
+describe("buildSitemap", () => {
   it("includes the root URL and published posts", async () => {
     // Arrange
     const updatedAt = "2026-06-01T12:00:00.000Z";
-    createServerClientMock.mockResolvedValue({
-      from: () => ({
-        select: () => ({
-          eq: () =>
-            Promise.resolve({
-              data: [{ slug: "hello-world", updated_at: updatedAt }],
-              error: null,
-            }),
-        }),
-      }),
+    const loader = async () => ({
+      data: [{ slug: "hello-world", updated_at: updatedAt }],
+      error: null,
     });
 
     // Act
-    const sitemap = (await import("../sitemap")).default;
-    const result = await sitemap();
+    const result = await buildSitemap(loader);
 
     // Assert
     expect(result.length).toBeGreaterThanOrEqual(2);
@@ -43,19 +26,29 @@ describe("sitemap", () => {
     expect(post?.lastModified).toBeInstanceOf(Date);
   });
 
-  it("returns only the root URL when Supabase errors", async () => {
+  it("returns only the root URL when the loader reports an error", async () => {
     // Arrange
-    createServerClientMock.mockResolvedValue({
-      from: () => ({
-        select: () => ({
-          eq: () => Promise.resolve({ data: null, error: { message: "boom" } }),
-        }),
-      }),
+    const loader = async () => ({
+      data: null,
+      error: { message: "boom" },
     });
 
     // Act
-    const sitemap = (await import("../sitemap")).default;
-    const result = await sitemap();
+    const result = await buildSitemap(loader);
+
+    // Assert
+    expect(result).toHaveLength(1);
+    expect(result[0].url).toMatch(/\/$/);
+  });
+
+  it("returns only the root URL when the loader throws", async () => {
+    // Arrange
+    const loader = async () => {
+      throw new Error("network down");
+    };
+
+    // Act
+    const result = await buildSitemap(loader);
 
     // Assert
     expect(result).toHaveLength(1);

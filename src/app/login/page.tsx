@@ -3,11 +3,26 @@ import { redirect } from "next/navigation";
 import { createServerClient } from "@/lib/supabase/server";
 
 type LoginPageProps = {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; next?: string }>;
 };
 
+/**
+ * next クエリの安全判定。callback 側 (`handler.ts`) と同じルールを揃える:
+ * - "/" で始まる
+ * - "//" で始まらない (protocol-relative URL の open redirect 防止)
+ *
+ * 安全と判定された値だけを OAuth provider の redirectTo に乗せる。
+ */
+function safeNextPath(next: string | undefined): string | null {
+  if (!next) return null;
+  if (!next.startsWith("/")) return null;
+  if (next.startsWith("//")) return null;
+  return next;
+}
+
 export default async function LoginPage({ searchParams }: LoginPageProps) {
-  const { error } = await searchParams;
+  const { error, next } = await searchParams;
+  const safeNext = safeNextPath(next);
 
   async function signIn() {
     "use server";
@@ -26,10 +41,17 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
       requestHeaders.get("origin") ??
       "http://localhost:3000";
 
+    // 安全な next が来ていれば callback URL のクエリに引き継ぐ。
+    // OAuth provider 経由でも redirectTo 文字列はそのまま保たれるので、
+    // callback の handler.ts 側で再度安全判定したうえで deep link 復帰する。
+    const callbackUrl = safeNext
+      ? `${origin}/auth/callback?next=${encodeURIComponent(safeNext)}`
+      : `${origin}/auth/callback`;
+
     const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${origin}/auth/callback`,
+        redirectTo: callbackUrl,
       },
     });
 

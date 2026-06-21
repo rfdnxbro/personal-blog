@@ -31,9 +31,12 @@ grant execute on function public.handle_new_user() to service_role;
 -- 将来のテーブル / 関数 / シーケンス追加時にも service_role に自動付与される
 -- default privileges を設定。これにより以降のマイグレーションで service_role を
 -- 個別に書き忘れても腐らない。
-alter default privileges in schema public
+-- `FOR ROLE postgres` を明示しているのは、Supabase のマイグレーション実行ロール
+-- (postgres) が作成した将来オブジェクトに限定するため。省略時の暗黙挙動と等価だが
+-- 意図を読み手に残す。
+alter default privileges for role postgres in schema public
   grant select, insert, update, delete on tables to service_role;
-alter default privileges in schema public
+alter default privileges for role postgres in schema public
   grant execute on functions to service_role;
-alter default privileges in schema public
+alter default privileges for role postgres in schema public
   grant usage, select on sequences to service_role;

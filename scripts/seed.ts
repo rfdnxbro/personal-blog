@@ -1,18 +1,10 @@
-// `.env` をプロセス開始時に process.env へ読み込む。Next.js の dev/build と違い
-// tsx で直接実行するスクリプトには env 自動読み込みが効かないため明示的に読む。
-// 副作用 import なので他の import より前に置く。
+// tsx 経由の直接実行では Next.js の env 自動読み込みが効かないため明示的に .env を読む
 import "dotenv/config";
 
 import { createClient } from "@supabase/supabase-js";
 
-// secret-key: seed only — 初期 admin upsert 1 経路のみで Supabase の secret key を握る
-// (rules/api.md 「機密の取り扱い」要件)。
-//
-// `import 'server-only'` は付けない: tsx で直接実行する Node スクリプトでは
-// `react-server` condition が立たず常に throw するため。代わりに冒頭で
-// `process.env` / `process.exit` という Node 専用 API を参照することで
-// Web ターゲットへの import 経路を物理的に閉じる (rules/api.md 「サーバ専用
-// モジュールの隔離」が許容する手段)。
+// secret-key: seed only — process.env / process.exit が Node 専用 API として
+// Web ターゲットへの import を物理的に閉じるため `server-only` は付けない (tsx 直接実行で throw する)
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
@@ -51,10 +43,7 @@ async function main() {
   console.log(`[seed] admin ready: id=${data.id} email=${ADMIN_EMAIL}`);
 }
 
-// tsx は .ts を CJS 経由でロードするケースがあり、トップレベル await が出力時に
-// "Top-level await is currently not supported with the CJS output format" で落ちる。
-// main().catch(...) 形式に揃えれば ESM / CJS どちらでも動く。fail() 経由の正常系
-// 異常終了は中で process.exit(1) するため、ここで拾うのは予期しない throw だけ。
+// tsx の CJS 経路で top-level await が禁止されるため main().catch() 形式にする
 main().catch((err) => {
   console.error(`[seed] unexpected error: ${err}`);
   process.exit(1);

@@ -18,7 +18,7 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 
 import { createServerClient } from "@/lib/supabase/server";
-import { updatePostAction } from "../_actions";
+import { createPostAction, updatePostAction } from "../_actions";
 
 type ChainStub = {
   select: ReturnType<typeof vi.fn>;
@@ -142,5 +142,145 @@ describe("updatePostAction (Server Action) — published_at handling", () => {
       published_at?: string;
     };
     expect(updateArg.published_at).toBeUndefined();
+  });
+});
+
+// createPostAction は posts.author_id (NOT NULL) を埋める責務を持つ。
+// Hono POST /posts と同じく、現在ログイン中の user から editors 行を引いて
+// editor.id を author_id に渡す。これを怠ると admin UI の「新規記事作成」が
+// 23502 NOT NULL constraint violation で必ず失敗する。
+describe("createPostAction (Server Action) — author_id resolution", () => {
+  const USER_ID = "22222222-2222-4222-8222-222222222222";
+  const EDITOR_ID = "33333333-3333-4333-8333-333333333333";
+
+  type CreateChainStub = {
+    select: ReturnType<typeof vi.fn>;
+    insert: ReturnType<typeof vi.fn>;
+    eq: ReturnType<typeof vi.fn>;
+    maybeSingle: ReturnType<typeof vi.fn>;
+  };
+
+  function makeCreateFromStub(): CreateChainStub {
+    const stub: CreateChainStub = {
+      select: vi.fn().mockReturnThis() as CreateChainStub["select"],
+      insert: vi.fn(),
+      eq: vi.fn().mockReturnThis() as CreateChainStub["eq"],
+      maybeSingle: vi.fn(),
+    };
+    return stub;
+  }
+
+  function makeCreateSupabase(opts: {
+    user: { id: string } | null;
+    editorStub: CreateChainStub;
+    postsStub: CreateChainStub;
+  }) {
+    return {
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: opts.user },
+          error: null,
+        }),
+      },
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === "editors") return opts.editorStub;
+        if (table === "posts") return opts.postsStub;
+        throw new Error(`unexpected table: ${table}`);
+      }),
+    };
+  }
+
+  it("includes author_id from the resolved editor row when inserting a post", async () => {
+    // Arrange
+    const editorStub = makeCreateFromStub();
+    editorStub.maybeSingle.mockResolvedValue({
+      data: { id: EDITOR_ID },
+      error: null,
+    });
+    const postsStub = makeCreateFromStub();
+    postsStub.insert.mockResolvedValue({ data: null, error: null });
+    vi.mocked(createServerClient).mockResolvedValue(
+      makeCreateSupabase({
+        user: { id: USER_ID },
+        editorStub,
+        postsStub,
+        // biome-ignore lint/suspicious/noExplicitAny: テスト用 supabase stub
+      }) as any,
+    );
+
+    // Act
+    await createPostAction(
+      makeFormData({
+        title: "hello world",
+        content_md: "# hi",
+        status: "draft",
+      }),
+    );
+
+    // Assert
+    expect(postsStub.insert).toHaveBeenCalledTimes(1);
+    const insertArg = postsStub.insert.mock.calls[0]?.[0] as {
+      author_id?: string;
+      title?: string;
+      slug?: string;
+      status?: string;
+    };
+    expect(insertArg.author_id).toBe(EDITOR_ID);
+    expect(insertArg.title).toBe("hello world");
+    expect(insertArg.status).toBe("draft");
+  });
+
+  it("throws when the current session has no editor row (prevents 23502 silent failure)", async () => {
+    // Arrange — editors 行が見つからないケース。
+    const editorStub = makeCreateFromStub();
+    editorStub.maybeSingle.mockResolvedValue({ data: null, error: null });
+    const postsStub = makeCreateFromStub();
+    postsStub.insert.mockResolvedValue({ data: null, error: null });
+    vi.mocked(createServerClient).mockResolvedValue(
+      makeCreateSupabase({
+        user: { id: USER_ID },
+        editorStub,
+        postsStub,
+        // biome-ignore lint/suspicious/noExplicitAny: テスト用 supabase stub
+      }) as any,
+    );
+
+    // Act + Assert
+    await expect(
+      createPostAction(
+        makeFormData({
+          title: "hello world",
+          content_md: "# hi",
+          status: "draft",
+        }),
+      ),
+    ).rejects.toThrow();
+    expect(postsStub.insert).not.toHaveBeenCalled();
+  });
+
+  it("throws when there is no authenticated user", async () => {
+    // Arrange
+    const editorStub = makeCreateFromStub();
+    const postsStub = makeCreateFromStub();
+    vi.mocked(createServerClient).mockResolvedValue(
+      makeCreateSupabase({
+        user: null,
+        editorStub,
+        postsStub,
+        // biome-ignore lint/suspicious/noExplicitAny: テスト用 supabase stub
+      }) as any,
+    );
+
+    // Act + Assert
+    await expect(
+      createPostAction(
+        makeFormData({
+          title: "hello world",
+          content_md: "# hi",
+          status: "draft",
+        }),
+      ),
+    ).rejects.toThrow();
+    expect(postsStub.insert).not.toHaveBeenCalled();
   });
 });

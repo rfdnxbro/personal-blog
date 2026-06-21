@@ -50,7 +50,31 @@ export async function createPostAction(formData: FormData): Promise<void> {
   }
 
   const supabase = await createServerClient();
+
+  // posts.author_id は NOT NULL なので、現セッションの user から editors 行を引いて
+  // author_id を埋める。Hono POST /api/posts と同じ解決パターン (routes/posts.ts)。
+  // editors 行が無い場合は RLS が 42501 を返す前に明示的に throw して
+  // 23502 NOT NULL violation の沈黙失敗を防ぐ。認可自体は RLS が一次源。
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    throw new Error("unauthorized");
+  }
+  const { data: editor, error: editorError } = await supabase
+    .from("editors")
+    .select("id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (editorError) {
+    throw new Error(`failed to resolve editor: ${editorError.message}`);
+  }
+  if (!editor) {
+    throw new Error("forbidden: no editor row for current user");
+  }
+
   const { error } = await supabase.from("posts").insert({
+    author_id: editor.id as string,
     title: parsed.data.title,
     slug,
     content_md: parsed.data.content_md,

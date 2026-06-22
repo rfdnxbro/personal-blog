@@ -18,6 +18,11 @@ export function mapDbError(error: DbError): MappedDbError {
     case "23505":
     case "23503":
       return { body: { error: "conflict" }, status: 409 };
+    case "23502":
+      // not_null_violation。zod 段階で必須化されていない optional field を DB が必須として
+      // 弾くケース (RLS でカラムが弾かれて null になる場合や、editor 未紐付けの POST など) を
+      // 「サーバエラー」ではなく 400 として返す。雑な 500 化を避けるため。
+      return { body: { error: "missing required field" }, status: 400 };
     case "23514":
       return { body: { error: "invalid" }, status: 400 };
     case "PGRST116":

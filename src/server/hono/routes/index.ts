@@ -1,6 +1,7 @@
 import "server-only";
 
 import { Hono } from "hono";
+import comments from "./comments";
 import editors from "./editors";
 import health from "./health";
 import posts from "./posts";
@@ -10,6 +11,7 @@ import posts from "./posts";
 const routes = new Hono()
   .route("/health", health)
   .route("/posts", posts)
-  .route("/editors", editors);
+  .route("/editors", editors)
+  .route("/comments", comments);
 
 export default routes;

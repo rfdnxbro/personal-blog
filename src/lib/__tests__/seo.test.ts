@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { buildPostMetadata } from "../seo";
+import { buildPostMetadata, extractDescription } from "../seo";
 
 const ORIGINAL_SITE_URL = process.env.NEXT_PUBLIC_SITE_URL;
 
@@ -57,5 +57,71 @@ describe("buildPostMetadata", () => {
     expect(metadata.alternates?.canonical).toBe(
       "http://localhost:3000/posts/draft",
     );
+  });
+});
+
+describe("extractDescription", () => {
+  it("returns plain text unchanged when within max length", () => {
+    // Arrange
+    const md = "This is a simple description.";
+
+    // Act
+    const result = extractDescription(md);
+
+    // Assert
+    expect(result).toBe("This is a simple description.");
+  });
+
+  it("strips markdown markers from headings, quotes, and lists", () => {
+    // Arrange
+    const md = "# Heading\n> quoted\n- list item\n* bullet\n1. numbered";
+
+    // Act
+    const result = extractDescription(md);
+
+    // Assert
+    expect(result).toBe("Heading quoted list item bullet numbered");
+  });
+
+  it("removes fenced code blocks", () => {
+    // Arrange
+    const md = "Intro text\n```ts\nconst x = 1;\n```\nOutro text";
+
+    // Act
+    const result = extractDescription(md);
+
+    // Assert
+    expect(result).toBe("Intro text Outro text");
+  });
+
+  it("collapses consecutive whitespace and newlines into single spaces", () => {
+    // Arrange
+    const md = "line one\n\n\nline   two";
+
+    // Act
+    const result = extractDescription(md);
+
+    // Assert
+    expect(result).toBe("line one line two");
+  });
+
+  it("truncates output to maxLength characters", () => {
+    // Arrange
+    const md = "a".repeat(500);
+
+    // Act
+    const result = extractDescription(md, 160);
+
+    // Assert
+    expect(result).toHaveLength(160);
+    expect(result).toBe("a".repeat(160));
+  });
+
+  it("returns empty string when input is empty", () => {
+    // Arrange / Act
+    const result = extractDescription("");
+
+    // Assert
+    expect(result).toBe("");
   });
 });

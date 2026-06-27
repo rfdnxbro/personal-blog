@@ -14,7 +14,7 @@ import { inviteEditorBody } from "@/lib/schemas";
 //   3. dev:             http://localhost:${PORT ?? 3000}
 //
 // dev fallback の host は `127.0.0.1` ではなく `localhost` を使う。 csrf.ts 側の
-// `buildAllowedOrigins()` は dev で `http://localhost:${PORT}` のみを許可リストに入れる
+// `getAllowedOrigins()` は dev で `http://localhost:${PORT}` のみを許可リストに入れる
 // ため、 `127.0.0.1` を選ぶと hono/csrf が「許可リストにない Origin」と判定して
 // 403 を返し、招待 form の送信が必ず失敗する (Round 2 fix)。
 function resolveSelfOrigin(): string {

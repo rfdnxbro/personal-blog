@@ -33,7 +33,14 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             </nav>
           </div>
         </header>
-        <main className="flex-1">{children}</main>
+        {/*
+          注意: ここを <main> にすると、既存ページ (/posts, /posts/[slug],
+          /admin/posts/**, /login) が自前で <main> を返している既存実装と
+          二重 nest になり HTML5 landmark を壊す。layout 側は単なる
+          flex コンテナとして <div className="flex-1"> に留め、各 page の
+          <main> を真の main landmark として残す。
+        */}
+        <div className="flex-1">{children}</div>
         <footer className="border-t border-gray-200">
           <div className="mx-auto max-w-3xl px-6 py-6 text-sm text-gray-500">
             © {year} blog

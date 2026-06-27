@@ -1,12 +1,13 @@
-import { existsSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
-import { ADMIN_STORAGE_STATE_PATH, hasE2eAuthEnv } from "./fixtures/auth";
+import { hasAdminStorageState, hasE2eAuthEnv } from "./fixtures/auth";
 
 /**
  * admin 認証済みフロー。
  *
- * storageState は global setup で magic link 経由で生成済み (cookie のみ JSON 化)。
- * service role key は spec 内で参照しない (fixture/global-setup 内に閉じる)。
+ * storageState は `pnpm db:seed --emit-storage-state` (scripts/seed.ts) で
+ * 事前生成しておく。Playwright プロセスには SUPABASE_SECRET_KEY を渡さない
+ * (.claude/rules/testing.md L66「service role key を E2E で使わない」)。
  *
  * env が無い or storageState が無い場合は test.skip() で全部飛ばす。
  */
@@ -17,8 +18,8 @@ test.describe("admin flow", () => {
       "Supabase env not configured; skipping admin flow",
     );
     test.skip(
-      !existsSync(ADMIN_STORAGE_STATE_PATH),
-      "admin storageState not generated; skipping admin flow",
+      !hasAdminStorageState(),
+      "admin storageState not generated; skipping admin flow (run `pnpm db:seed --emit-storage-state` first)",
     );
   });
 
@@ -32,9 +33,9 @@ test.describe("admin flow", () => {
   });
 
   test("admin can create a draft post", async ({ page }) => {
-    // Arrange
+    // Arrange: title は uuid 混ぜで衝突を避ける (slug 自動生成の unique 違反対策)
     await page.goto("/admin/posts/new");
-    const title = `E2E draft ${Date.now()}`;
+    const title = `E2E draft ${Date.now()}-${randomUUID().slice(0, 8)}`;
 
     // Act
     await page.getByLabel("タイトル").fill(title);
@@ -52,9 +53,9 @@ test.describe("admin flow", () => {
   test("admin can publish a post and it appears on public index", async ({
     page,
   }) => {
-    // Arrange
+    // Arrange: title は uuid 混ぜで衝突を避ける (slug 自動生成の unique 違反対策)
     await page.goto("/admin/posts/new");
-    const title = `E2E published ${Date.now()}`;
+    const title = `E2E published ${Date.now()}-${randomUUID().slice(0, 8)}`;
 
     // Act
     await page.getByLabel("タイトル").fill(title);
@@ -63,9 +64,11 @@ test.describe("admin flow", () => {
       .fill("# heading\n\nE2E で投入した公開記事本文。");
     await page.getByRole("button", { name: "公開" }).click();
 
-    // Assert: 一覧に戻ったあと公開記事一覧に出る
+    // Assert: 一覧に戻ったあと公開記事一覧に link role で現れる
+    // (link role 経由は auto-retry assertion が効き、単純な text match より
+    // 記事 list との具体性が高い)
     await page.waitForURL(/\/admin\/posts(\?.*)?$/);
     await page.goto("/posts");
-    await expect(page.getByText(title)).toBeVisible();
+    await expect(page.getByRole("link", { name: title })).toBeVisible();
   });
 });

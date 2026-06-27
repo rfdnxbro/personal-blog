@@ -29,7 +29,7 @@ export default async function PostsIndexPage() {
   return (
     <main className="mx-auto max-w-2xl p-6">
       <h1 className="mb-6 text-2xl font-bold">記事一覧</h1>
-      <ul className="space-y-3">
+      <ul className="space-y-3" data-testid="post-list">
         {posts.map((post) => (
           <li key={post.id}>
             <Link

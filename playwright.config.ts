@@ -1,12 +1,18 @@
 import { defineConfig } from "@playwright/test";
-import { ADMIN_STORAGE_STATE_PATH, hasE2eAuthEnv } from "./e2e/fixtures/auth";
+import {
+  ADMIN_STORAGE_STATE_PATH,
+  hasAdminStorageState,
+} from "./e2e/fixtures/auth";
 
-// storageState は env が揃っているときだけ参照する。env が無い環境では
-// global setup が何もせず admin spec も自分で skip するため、ここでも
-// undefined を渡して Playwright が無い JSON ファイルを読みに行かないようにする。
-// env が揃っていれば global setup が必ず ADMIN_STORAGE_STATE_PATH を生成するか
-// warn して spec が skip される。
-const adminStorageState = hasE2eAuthEnv()
+// storageState は env が揃っている **かつ** ファイルが存在しているときだけ参照する。
+//
+// storageState の生成は Playwright プロセスでは行わない (SUPABASE_SECRET_KEY を
+// Playwright プロセスに渡さない設計; .claude/rules/testing.md L66)。
+// 代わりに `pnpm db:seed --emit-storage-state` (scripts/seed.ts) が生成する。
+// env だけ揃っていてファイルが無いケースで `use.storageState` に存在しないパスを
+// 渡してしまうと Playwright のバージョン次第で読み込みエラーになるため、
+// ファイル存在も config 側で見て undefined に倒す。
+const adminStorageState = hasAdminStorageState()
   ? ADMIN_STORAGE_STATE_PATH
   : undefined;
 
@@ -16,7 +22,6 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : "list",
-  globalSetup: "./e2e/global-setup.ts",
   use: {
     baseURL: "http://localhost:3000",
     trace: "retain-on-failure",
@@ -36,7 +41,8 @@ export default defineConfig({
     { name: "smoke", testMatch: /smoke\.spec\.ts/ },
     // 未認証ユーザー視点の公開フロー。Supabase env が無ければ spec 側で skip。
     { name: "public-flow", testMatch: /public-flow\.spec\.ts/ },
-    // admin 認証済みフロー。global setup で magic link 経由に生成した storageState を再利用する。
+    // admin 認証済みフロー。`pnpm db:seed --emit-storage-state` が事前に生成した
+    // storageState を再利用する。env or ファイルが無ければ spec 側で skip。
     {
       name: "admin-flow",
       testMatch: /admin-flow\.spec\.ts/,

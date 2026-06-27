@@ -35,13 +35,13 @@ test.describe("public flow", () => {
   });
 
   test("post detail renders article body", async ({ page }) => {
-    // Arrange: 一覧から最初の post リンクを拾って詳細に遷移する
+    // Arrange: 一覧から最初の post リンクを拾って詳細に遷移する。
+    // layout に nav 等が増えても拾わないよう、posts/page.tsx 側の
+    // post 一覧 <ul> に付けた data-testid 内に限定する。
     await page.goto("/posts");
-    const firstPostLink = page
-      .getByRole("link")
-      .filter({ hasText: /.+/ })
-      .first();
-    const linkCount = await page.getByRole("link").count();
+    const postList = page.getByTestId("post-list");
+    const firstPostLink = postList.getByRole("link").first();
+    const linkCount = await postList.getByRole("link").count();
     test.skip(
       linkCount === 0,
       "no published posts seeded; skipping detail check",
@@ -51,8 +51,20 @@ test.describe("public flow", () => {
     await firstPostLink.click();
     await page.waitForURL(/\/posts\/[^/]+$/);
 
-    // Assert
-    await expect(page.locator("article")).toBeVisible();
-    await expect(page.locator("article h1")).toBeVisible();
+    // Assert: CSS セレクタを使わず role 経由で記事本体と見出しを取得する
+    // (.claude/rules/testing.md「locator の選び方」優先度)。
+    await expect(page.getByRole("article")).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
   });
+
+  // 匿名コメント投稿フロー (PR-C CommentForm) の E2E カバレッジは Phase 2 送り。
+  // 理由:
+  //   1. CommentForm はまだ src/app/posts/[slug]/page.tsx に差し込まれていない
+  //      (PR-C の Server Component 統合が未着手)
+  //   2. CommentForm の `verifyTurnstile` は TURNSTILE_SECRET_KEY 未設定で
+  //      fail closed (400) するため、ローカル / CI で実フローを踏ませるには
+  //      env 注入か bypass フラグの設計が要る (現状は未実装)
+  // この PR の commit message / PR description でも「コメント送信フローは
+  // Phase 2 送り」と明示する。
+  test.skip("anonymous comment submission appears in CommentList (Phase 2)", () => {});
 });

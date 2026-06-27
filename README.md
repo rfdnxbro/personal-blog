@@ -54,6 +54,7 @@ pnpm dev
 | `pnpm test` | Vitest |
 | `pnpm test:e2e` | Playwright E2E |
 | `pnpm db:seed` | 初期 admin 投入 (`ADMIN_EMAIL` 必須) ※ Phase 1 で有効化 |
+| `pnpm db:seed --emit-storage-state` | 上記 + E2E 用 admin storageState (`playwright/.auth/admin.json`) 生成。`SUPABASE_SECRET_KEY` の参照はこの経路に閉じる |
 
 ## リポジトリ構成
 
@@ -91,28 +92,32 @@ Playwright E2E は 3 つの project で構成する (`playwright.config.ts`):
 - `public-flow` — 未認証ユーザー視点の公開フロー (`e2e/public-flow.spec.ts`)
 - `admin-flow` — admin 認証済み投稿 CRUD フロー (`e2e/admin-flow.spec.ts`)
 
-`public-flow` / `admin-flow` は実 Supabase に依存するため、以下の env が揃っていないと `test.skip()` で安全に飛ばす:
+`public-flow` / `admin-flow` は実 Supabase に依存するため、Playwright プロセスからは以下の env が **必須**:
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
-- `SUPABASE_SECRET_KEY` (※ E2E では `e2e/global-setup.ts` 経由でのみ参照、spec ファイル内には漏らさない)
 - `ADMIN_EMAIL`
+
+これらが揃っていなければ spec 側で `test.skip()` し、CI を赤くしない。
+
+**`SUPABASE_SECRET_KEY` は Playwright プロセスには渡さない**。.claude/rules/testing.md L66「service role key を E2E で使わない」を遵守するため、admin storageState の生成は **seed プロセス側** (`scripts/seed.ts --emit-storage-state`) でだけ行い、Playwright は出力された JSON を読むだけにする。
 
 実フローを叩く場合の前提:
 
 1. Supabase の `auth.users` に `ADMIN_EMAIL` のユーザーが存在し、`editors` テーブルに対応行が入っていること (`pnpm db:seed`)
-2. `pnpm db:seed` 等で公開済み記事が最低 1 件入っていること (`public-flow` の post 詳細チェック用)
+2. 公開済み記事が最低 1 件入っていること (`public-flow` の post 詳細チェック用)
+3. admin spec を走らせる場合は `pnpm db:seed --emit-storage-state` を事前に実行し `playwright/.auth/admin.json` を生成しておくこと (生成失敗時はファイル無し → admin spec が skip に倒れる)
 
 実行:
 
 ```bash
-pnpm test:e2e            # 3 project 全部 (env 無しなら public-flow / admin-flow は skip)
+pnpm test:e2e            # 3 project 全部 (env / storageState 無しなら public-flow / admin-flow は skip)
 pnpm test:e2e --project=smoke
 pnpm test:e2e --project=public-flow
 pnpm test:e2e --project=admin-flow
 ```
 
-`admin-flow` 用の認証 cookie は `e2e/global-setup.ts` が `auth.admin.generateLink({ type: 'magiclink' })` を踏ませて `playwright/.auth/admin.json` に保存する (gitignore 済み)。env が無い / generateLink が失敗した場合は warn ログを出して storageState を生成せず、spec 側で skip される。
+`pnpm db:seed --emit-storage-state` は内部で `auth.admin.generateLink({ type: 'magiclink' })` を踏ませて `playwright/.auth/admin.json` に cookie を保存する (gitignore 済み)。`SUPABASE_SECRET_KEY` の参照はこのコマンド (= seed プロセス) でのみ行う。
 
 ## CI / branch protection / Renovate
 

@@ -21,6 +21,7 @@ supabase/.branches/
 coverage/
 playwright-report/
 test-results/
+playwright/.auth/
 
 # Environment
 # 機密 env (.env / .env.local / .env.<NODE_ENV>.local 等) は全部除外、サンプルのみ追跡する。

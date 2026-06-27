@@ -54,6 +54,7 @@ pnpm dev
 | `pnpm test` | Vitest |
 | `pnpm test:e2e` | Playwright E2E |
 | `pnpm db:seed` | 初期 admin 投入 (`ADMIN_EMAIL` 必須) ※ Phase 1 で有効化 |
+| `pnpm db:seed --emit-storage-state` | 上記 + E2E 用 admin storageState (`playwright/.auth/admin.json`) 生成。`SUPABASE_SECRET_KEY` の参照はこの経路に閉じる |
 
 ## リポジトリ構成
 
@@ -82,6 +83,41 @@ Phase 1 で追加されるディレクトリ (詳細は [PLAN.md](./PLAN.md#phas
   - `https://<vercel-project>.vercel.app/auth/callback` (production)
   - preview URL パターン (例: `https://<vercel-project>-*.vercel.app/auth/callback`)
   - `http://localhost:3000/auth/callback` (ローカル開発)
+
+## E2E
+
+Playwright E2E は 3 つの project で構成する (`playwright.config.ts`):
+
+- `smoke` — env 無しでも常時 PASS する最低限のスモーク (`e2e/smoke.spec.ts`)
+- `public-flow` — 未認証ユーザー視点の公開フロー (`e2e/public-flow.spec.ts`)
+- `admin-flow` — admin 認証済み投稿 CRUD フロー (`e2e/admin-flow.spec.ts`)
+
+`public-flow` / `admin-flow` は実 Supabase に依存するため、Playwright プロセスからは以下の env が **必須**:
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+- `ADMIN_EMAIL`
+
+これらが揃っていなければ spec 側で `test.skip()` し、CI を赤くしない。
+
+**`SUPABASE_SECRET_KEY` は Playwright プロセスには渡さない**。.claude/rules/testing.md L66「service role key を E2E で使わない」を遵守するため、admin storageState の生成は **seed プロセス側** (`scripts/seed.ts --emit-storage-state`) でだけ行い、Playwright は出力された JSON を読むだけにする。
+
+実フローを叩く場合の前提:
+
+1. Supabase の `auth.users` に `ADMIN_EMAIL` のユーザーが存在し、`editors` テーブルに対応行が入っていること (`pnpm db:seed`)
+2. 公開済み記事が最低 1 件入っていること (`public-flow` の post 詳細チェック用)
+3. admin spec を走らせる場合は `pnpm db:seed --emit-storage-state` を事前に実行し `playwright/.auth/admin.json` を生成しておくこと (生成失敗時はファイル無し → admin spec が skip に倒れる)
+
+実行:
+
+```bash
+pnpm test:e2e            # 3 project 全部 (env / storageState 無しなら public-flow / admin-flow は skip)
+pnpm test:e2e --project=smoke
+pnpm test:e2e --project=public-flow
+pnpm test:e2e --project=admin-flow
+```
+
+`pnpm db:seed --emit-storage-state` は内部で `auth.admin.generateLink({ type: 'magiclink' })` を踏ませて `playwright/.auth/admin.json` に cookie を保存する (gitignore 済み)。`SUPABASE_SECRET_KEY` の参照はこのコマンド (= seed プロセス) でのみ行う。
 
 ## CI / branch protection / Renovate
 

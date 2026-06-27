@@ -83,6 +83,37 @@ Phase 1 で追加されるディレクトリ (詳細は [PLAN.md](./PLAN.md#phas
   - preview URL パターン (例: `https://<vercel-project>-*.vercel.app/auth/callback`)
   - `http://localhost:3000/auth/callback` (ローカル開発)
 
+## E2E
+
+Playwright E2E は 3 つの project で構成する (`playwright.config.ts`):
+
+- `smoke` — env 無しでも常時 PASS する最低限のスモーク (`e2e/smoke.spec.ts`)
+- `public-flow` — 未認証ユーザー視点の公開フロー (`e2e/public-flow.spec.ts`)
+- `admin-flow` — admin 認証済み投稿 CRUD フロー (`e2e/admin-flow.spec.ts`)
+
+`public-flow` / `admin-flow` は実 Supabase に依存するため、以下の env が揃っていないと `test.skip()` で安全に飛ばす:
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+- `SUPABASE_SECRET_KEY` (※ E2E では `e2e/global-setup.ts` 経由でのみ参照、spec ファイル内には漏らさない)
+- `ADMIN_EMAIL`
+
+実フローを叩く場合の前提:
+
+1. Supabase の `auth.users` に `ADMIN_EMAIL` のユーザーが存在し、`editors` テーブルに対応行が入っていること (`pnpm db:seed`)
+2. `pnpm db:seed` 等で公開済み記事が最低 1 件入っていること (`public-flow` の post 詳細チェック用)
+
+実行:
+
+```bash
+pnpm test:e2e            # 3 project 全部 (env 無しなら public-flow / admin-flow は skip)
+pnpm test:e2e --project=smoke
+pnpm test:e2e --project=public-flow
+pnpm test:e2e --project=admin-flow
+```
+
+`admin-flow` 用の認証 cookie は `e2e/global-setup.ts` が `auth.admin.generateLink({ type: 'magiclink' })` を踏ませて `playwright/.auth/admin.json` に保存する (gitignore 済み)。env が無い / generateLink が失敗した場合は warn ログを出して storageState を生成せず、spec 側で skip される。
+
 ## CI / branch protection / Renovate
 
 - GitHub Actions の `build` / `e2e` の 2 job を branch protection の **Required status checks** に設定する (`Claude Code Review` / `claude` は required にしない)

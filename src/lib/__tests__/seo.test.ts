@@ -94,6 +94,17 @@ describe("extractDescription", () => {
     expect(result).toBe("Intro text Outro text");
   });
 
+  it("removes tilde fenced code blocks", () => {
+    // Arrange
+    const md = "Intro text\n~~~ts\nconst x = 1;\n~~~\nOutro text";
+
+    // Act
+    const result = extractDescription(md);
+
+    // Assert
+    expect(result).toBe("Intro text Outro text");
+  });
+
   it("collapses consecutive whitespace and newlines into single spaces", () => {
     // Arrange
     const md = "line one\n\n\nline   two";
@@ -105,7 +116,21 @@ describe("extractDescription", () => {
     expect(result).toBe("line one line two");
   });
 
-  it("truncates output to maxLength characters", () => {
+  it("strips inline emphasis, code, link, and image markers", () => {
+    // Arrange
+    const md =
+      "See **bold** and *italic* and __strong__ and _em_ and ~~strike~~ and `code` plus [link text](https://example.test) and ![alt text](https://example.test/img.png).";
+
+    // Act
+    const result = extractDescription(md);
+
+    // Assert
+    expect(result).toBe(
+      "See bold and italic and strong and em and strike and code plus link text and alt text.",
+    );
+  });
+
+  it("appends ellipsis when truncating", () => {
     // Arrange
     const md = "a".repeat(500);
 
@@ -113,8 +138,27 @@ describe("extractDescription", () => {
     const result = extractDescription(md, 160);
 
     // Assert
-    expect(result).toHaveLength(160);
-    expect(result).toBe("a".repeat(160));
+    // Array.from で codepoint 単位に分割した長さは 160 + 末尾の "…" 1 文字。
+    expect(Array.from(result)).toHaveLength(161);
+    expect(result.endsWith("…")).toBe(true);
+    expect(result.startsWith("a".repeat(160))).toBe(true);
+  });
+
+  it("does not split surrogate pairs when truncating", () => {
+    // Arrange — 絵文字 (サロゲートペア) を maxLength の境界に置く。
+    const md = "🎉".repeat(200);
+
+    // Act
+    const result = extractDescription(md, 10);
+
+    // Assert
+    // codepoint ベースで 10 文字分の絵文字 + 末尾 "…" になる。
+    // .length (UTF-16 code unit) で 21 = 10 emoji * 2 surrogates + 1 ellipsis。
+    expect(result.length).toBe(21);
+    expect(Array.from(result)).toHaveLength(11);
+    expect(result.endsWith("…")).toBe(true);
+    // 不正なサロゲートペア (lone surrogate) が混入していないことを確認。
+    expect(result).toBe(`${"🎉".repeat(10)}…`);
   });
 
   it("returns empty string when input is empty", () => {

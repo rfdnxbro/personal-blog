@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { createServerClient } from "@/lib/supabase/server";
 
 // このページは cookie + RLS でユーザー固有データを返す。
@@ -15,6 +16,25 @@ type EditorRow = {
 
 export default async function AdminEditorsPage() {
   const supabase = await createServerClient();
+
+  // 非 admin (role="editor") にも form を見せて 403 で弾く二段構えは UX が悪い。
+  // RLS が一次源で認可は守られているため、ここでは「admin にだけ UI を見せる」最小調整として
+  // current user の role を読み、admin 以外は notFound() で 404 を返す。
+  // 認可の二重実装ではなく、admin 専用 UI の可視性制御。
+  const { data: authData } = await supabase.auth.getUser();
+  const userId = authData.user?.id;
+  if (!userId) {
+    notFound();
+  }
+  const { data: meRow } = await supabase
+    .from("editors")
+    .select("role")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (meRow?.role !== "admin") {
+    notFound();
+  }
+
   // editors の全件 SELECT は RLS で admin (current_editor_role() = 'admin') にだけ許される。
   // 非 admin がここに辿り着いても空配列が返るだけで、 secret key の取り扱いは Hono route 側に
   // 閉じている。

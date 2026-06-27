@@ -1,9 +1,37 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { inviteEditorBody } from "@/lib/schemas";
+
+// Hono CSRF middleware (hono/csrf) は Origin ヘッダで許可 host を判定する。
+// Origin を request の `Host` ヘッダから組み立てると Host header injection で fetch 宛先が
+// 外部に逸れ、Cookie に乗せた Supabase session が攻撃者の指定先に流出するため、
+// 外部入力を一切信頼せず env から固定的に解決する (csrf.ts と決定方式を揃える)。
+//   1. 本番 (prod):     NEXT_PUBLIC_SITE_URL
+//   2. preview:         https://${VERCEL_URL}
+//   3. dev:             http://127.0.0.1:${PORT ?? 3000}
+function resolveSelfOrigin(): string {
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+  if (siteUrl && siteUrl.length > 0) {
+    return siteUrl;
+  }
+  const vercelUrl = process.env.VERCEL_URL;
+  if (vercelUrl && vercelUrl.length > 0) {
+    return `https://${vercelUrl}`;
+  }
+  const port = process.env.PORT ?? "3000";
+  return `http://127.0.0.1:${port}`;
+}
+
+// Supabase auth-helpers / @supabase/ssr は cookie 名を `sb-*` プレフィックスで発行する
+// (例: `sb-<project-ref>-auth-token`, `sb-access-token`, `sb-refresh-token`)。
+// 全 cookie を Hono route に転送すると関係のない cookie まで毎回 forward されるため、
+// session 復元に必要な `sb-*` のみに絞る。
+function isSupabaseSessionCookie(cookieName: string): boolean {
+  return cookieName.startsWith("sb-");
+}
 
 // admin による editor 招待は SUPABASE_SECRET_KEY (`auth.admin.inviteUserByEmail`) を叩く必要が
 // あるが、 secret key の利用経路を増やさないため、 Server Action から直接 createClient せず
@@ -24,23 +52,16 @@ export async function inviteEditorAction(formData: FormData): Promise<void> {
     throw new Error(`invalid: ${parsed.error.issues[0]?.message ?? "unknown"}`);
   }
 
-  // Hono CSRF middleware (hono/csrf) は Origin ヘッダで許可 host を判定するため、
-  // Server Action 側から自分の現在ドメインを Origin として明示的に渡す。
-  // x-forwarded-proto は Vercel / リバプロを通る経路で立つ。ローカル dev では立たないので
-  // http にフォールバックする。
-  const headerStore = await headers();
-  const host = headerStore.get("host");
-  const proto = headerStore.get("x-forwarded-proto") ?? "http";
-  if (!host) {
-    throw new Error("invalid: missing host header");
-  }
-  const origin = `${proto}://${host}`;
+  // Origin は外部入力を一切信頼せず env から固定的に決定する (上記コメント参照)。
+  const origin = resolveSelfOrigin();
 
   // 現セッションの Supabase cookie をそのまま転送して Hono route 側で createServerClient
   // にセッションを復元させる。 fetch は cookie を自動付与しないため明示的に組み立てる。
+  // Supabase 以外の cookie は転送せず、forward 範囲を最小化する。
   const cookieStore = await cookies();
   const cookieHeader = cookieStore
     .getAll()
+    .filter((c) => isSupabaseSessionCookie(c.name))
     .map((c) => `${c.name}=${c.value}`)
     .join("; ");
 

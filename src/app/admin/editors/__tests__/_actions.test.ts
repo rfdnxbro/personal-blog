@@ -20,6 +20,7 @@ vi.mock("next/headers", () => ({
 }));
 
 import { cookies } from "next/headers";
+import { getAllowedOrigins } from "@/server/hono/middleware/csrf";
 import { inviteEditorAction } from "../_actions";
 
 function makeFormData(entries: Record<string, string>): FormData {
@@ -192,8 +193,11 @@ describe("inviteEditorAction (Server Action)", () => {
     expect(fetchHeaders.Origin).toBe("https://blog-git-feat-foo.vercel.app");
   });
 
-  it("falls back to http 127.0.0.1 with PORT env in local dev when no site env is set", async () => {
+  it("falls back to http://localhost:3000 in local dev when no site env is set", async () => {
     // Arrange — dev 想定。NEXT_PUBLIC_SITE_URL / VERCEL_URL 共に無い場合は localhost に倒す。
+    // Round 2 fix: csrf.ts の allowed origins と host 表記を揃えるため `127.0.0.1` ではなく
+    // `localhost` を使う (両者が同じ env 解決ロジックに乗ることで、 dev 下で
+    // hono/csrf が 403 を返さないことを保証する)。
     setupCookies();
     const fetchSpy = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ id: "e2" }), {
@@ -214,9 +218,9 @@ describe("inviteEditorAction (Server Action)", () => {
 
     // Assert
     const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("http://127.0.0.1:3000/api/editors/invite");
+    expect(url).toBe("http://localhost:3000/api/editors/invite");
     const fetchHeaders = init.headers as Record<string, string>;
-    expect(fetchHeaders.Origin).toBe("http://127.0.0.1:3000");
+    expect(fetchHeaders.Origin).toBe("http://localhost:3000");
   });
 
   it("respects PORT env in local dev fallback", async () => {
@@ -242,7 +246,7 @@ describe("inviteEditorAction (Server Action)", () => {
 
     // Assert
     const [url] = fetchSpy.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("http://127.0.0.1:3001/api/editors/invite");
+    expect(url).toBe("http://localhost:3001/api/editors/invite");
   });
 
   it("ignores Host header injection (Origin must come from env, not from request)", async () => {
@@ -373,5 +377,105 @@ describe("inviteEditorAction (Server Action)", () => {
     await expect(promise).rejects.toThrow(/failed to invite/);
     await expect(promise).rejects.toThrow(/invite_failed_rollback_failed/);
     await expect(promise).rejects.toThrow(/invite quota exceeded/);
+  });
+
+  describe("Origin / CSRF alignment regression (Round 2)", () => {
+    // resolveSelfOrigin() が返す origin は、 Hono の csrfMiddleware が許可する
+    // origin と完全一致しなければ、 Server Action から /api/editors/invite への
+    // loopback fetch が `hono/csrf` で 403 で弾かれる (招待 form が必ず失敗する) 。
+    // dev / preview / production の各シナリオで「Server Action が組み立てる Origin が
+    // 必ず csrf の allowed origins に含まれる」ことを assert する。
+    //
+    // NODE_ENV は @types/node 22 で readonly 化されているため、テストでは
+    // Reflect で書き換える (`process.env.NODE_ENV = "development"` だと型エラー)。
+    function setNodeEnv(value: "development" | "production"): void {
+      Reflect.set(process.env, "NODE_ENV", value);
+    }
+
+    it("dev (no env): Server Action Origin is included in csrf allowed origins", async () => {
+      // Arrange — dev 想定 (production でない、 NEXT_PUBLIC_SITE_URL / VERCEL_URL は無し)。
+      setNodeEnv("development");
+      setupCookies();
+      const fetchSpy = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ id: "e2" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      vi.stubGlobal("fetch", fetchSpy);
+
+      // Act
+      await inviteEditorAction(
+        makeFormData({
+          email: "new@example.com",
+          role: "editor",
+          display_name: "Dev",
+        }),
+      );
+
+      // Assert
+      const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+      const fetchHeaders = init.headers as Record<string, string>;
+      const allowed = getAllowedOrigins();
+      expect(allowed).toContain(fetchHeaders.Origin);
+    });
+
+    it("dev with PORT=3001: Server Action Origin is included in csrf allowed origins", async () => {
+      // Arrange — dev で PORT を差し替えた場合も両者が追従していること。
+      setNodeEnv("development");
+      process.env.PORT = "3001";
+      setupCookies();
+      const fetchSpy = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ id: "e2" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      vi.stubGlobal("fetch", fetchSpy);
+
+      // Act
+      await inviteEditorAction(
+        makeFormData({
+          email: "new@example.com",
+          role: "editor",
+          display_name: "Dev",
+        }),
+      );
+
+      // Assert
+      const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+      const fetchHeaders = init.headers as Record<string, string>;
+      const allowed = getAllowedOrigins();
+      expect(allowed).toContain(fetchHeaders.Origin);
+    });
+
+    it("production with NEXT_PUBLIC_SITE_URL: Server Action Origin is included in csrf allowed origins", async () => {
+      // Arrange — production で NEXT_PUBLIC_SITE_URL が設定されている場合。
+      setNodeEnv("production");
+      process.env.NEXT_PUBLIC_SITE_URL = "https://blog.example.com";
+      setupCookies();
+      const fetchSpy = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ id: "e2" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      vi.stubGlobal("fetch", fetchSpy);
+
+      // Act
+      await inviteEditorAction(
+        makeFormData({
+          email: "new@example.com",
+          role: "editor",
+          display_name: "Prod",
+        }),
+      );
+
+      // Assert
+      const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+      const fetchHeaders = init.headers as Record<string, string>;
+      const allowed = getAllowedOrigins();
+      expect(allowed).toContain(fetchHeaders.Origin);
+    });
   });
 });

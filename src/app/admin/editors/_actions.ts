@@ -11,7 +11,12 @@ import { inviteEditorBody } from "@/lib/schemas";
 // 外部入力を一切信頼せず env から固定的に解決する (csrf.ts と決定方式を揃える)。
 //   1. 本番 (prod):     NEXT_PUBLIC_SITE_URL
 //   2. preview:         https://${VERCEL_URL}
-//   3. dev:             http://127.0.0.1:${PORT ?? 3000}
+//   3. dev:             http://localhost:${PORT ?? 3000}
+//
+// dev fallback の host は `127.0.0.1` ではなく `localhost` を使う。 csrf.ts 側の
+// `buildAllowedOrigins()` は dev で `http://localhost:${PORT}` のみを許可リストに入れる
+// ため、 `127.0.0.1` を選ぶと hono/csrf が「許可リストにない Origin」と判定して
+// 403 を返し、招待 form の送信が必ず失敗する (Round 2 fix)。
 function resolveSelfOrigin(): string {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
   if (siteUrl && siteUrl.length > 0) {
@@ -22,7 +27,7 @@ function resolveSelfOrigin(): string {
     return `https://${vercelUrl}`;
   }
   const port = process.env.PORT ?? "3000";
-  return `http://127.0.0.1:${port}`;
+  return `http://localhost:${port}`;
 }
 
 // Supabase auth-helpers / @supabase/ssr は cookie 名を `sb-*` プレフィックスで発行する
